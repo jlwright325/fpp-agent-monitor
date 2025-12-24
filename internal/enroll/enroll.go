@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -21,21 +20,24 @@ type Enroller struct {
 	APIBaseURL   string
 	AgentVersion string
 	Token        string
+	Label        string
+	FPPBaseURL   string
 	MaxBackoff   time.Duration
 }
 
 type requestPayload struct {
 	EnrollmentToken string   `json:"enrollment_token"`
 	Hostname        string   `json:"hostname"`
-	Arch            string   `json:"arch"`
 	AgentVersion    string   `json:"agent_version"`
-	Capabilities    []string `json:"capabilities"`
+	Label           string   `json:"label,omitempty"`
+	FPPVersion      *string  `json:"fpp_version"`
 }
 
 type responsePayload struct {
 	DeviceID    string `json:"device_id"`
 	DeviceToken string `json:"device_token"`
 	LocationID  string `json:"location_id"`
+	Label       string `json:"label"`
 }
 
 func (e *Enroller) Run(ctx context.Context) (*responsePayload, error) {
@@ -64,14 +66,9 @@ func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 	payload := requestPayload{
 		EnrollmentToken: e.Token,
 		Hostname:        hostname,
-		Arch:            runtime.GOARCH,
 		AgentVersion:    e.AgentVersion,
-		Capabilities: []string{
-			"heartbeat",
-			"commands",
-			"update",
-			"network_probe",
-		},
+		Label:           e.Label,
+		FPPVersion:      fetchFPPVersion(ctx, e.FPPBaseURL, e.Client),
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -113,3 +110,31 @@ type statusError int
 func (s statusError) Error() string { return "http_status_" + strconv.Itoa(int(s)) }
 
 var errInvalidResponse = errors.New("invalid_enroll_response")
+
+func fetchFPPVersion(ctx context.Context, baseURL string, client *httpclient.Client) *string {
+	if baseURL == "" || client == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/system/info", nil)
+	if err != nil {
+		return nil
+	}
+	resp, body, err := client.DoWithRetry(ctx, req)
+	if err != nil || resp.StatusCode >= 300 {
+		return nil
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil
+	}
+	if v, ok := out["version"].(string); ok && v != "" {
+		return &v
+	}
+	if v, ok := out["fppd"].(string); ok && v != "" {
+		return &v
+	}
+	return nil
+}

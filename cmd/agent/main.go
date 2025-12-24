@@ -43,6 +43,8 @@ func main() {
 			APIBaseURL:   cfg.APIBaseURL,
 			AgentVersion: version,
 			Token:        cfg.EnrollmentToken,
+			Label:        cfg.Label,
+			FPPBaseURL:   cfg.FPPBaseURL,
 			MaxBackoff:   60 * time.Second,
 		}
 		resp, err := enroller.Run(ctx)
@@ -53,6 +55,9 @@ func main() {
 		cfg.DeviceID = resp.DeviceID
 		cfg.DeviceToken = resp.DeviceToken
 		cfg.LocationID = resp.LocationID
+		if resp.Label != "" {
+			cfg.Label = resp.Label
+		}
 		cfg.EnrollmentToken = ""
 		if err := config.Save(*configPath, cfg); err != nil {
 			logger.Error("config_write_failed", map[string]interface{}{"error": err.Error(), "path": *configPath})

@@ -1,9 +1,10 @@
 {
-  "api_base_url": "https://example.com",
+  "api_base_url": "https://api.showops.io",
   "enrollment_token": "",
   "device_token": "",
   "device_id": "",
   "location_id": "",
+  "label": "",
   "heartbeat_interval_sec": 15,
   "command_poll_interval_sec": 7,
   "fpp_base_url": "http://127.0.0.1",

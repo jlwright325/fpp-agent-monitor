@@ -14,6 +14,7 @@ type Config struct {
 	DeviceToken            string           `json:"device_token"`
 	DeviceID               string           `json:"device_id"`
 	LocationID             string           `json:"location_id"`
+	Label                  string           `json:"label"`
 	HeartbeatIntervalSec   int              `json:"heartbeat_interval_sec"`
 	CommandPollIntervalSec int              `json:"command_poll_interval_sec"`
 	FPPBaseURL             string           `json:"fpp_base_url"`
@@ -96,6 +97,9 @@ func applyEnvOverrides(cfg *Config) {
 }
 
 func setDefaults(cfg *Config) {
+	if cfg.APIBaseURL == "" {
+		cfg.APIBaseURL = "https://api.showops.io"
+	}
 	if cfg.HeartbeatIntervalSec <= 0 {
 		cfg.HeartbeatIntervalSec = 15
 	}
