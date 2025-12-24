@@ -1,0 +1,197 @@
+package exec
+
+import (
+	"context"
+	"net"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
+
+	"fpp-monitor-agent/internal/log"
+	"fpp-monitor-agent/internal/update"
+)
+
+type Executor struct {
+	Logger            *log.Logger
+	UpdateEnabled     bool
+	AllowDowngrade    bool
+	UpdateChannel     string
+	DownloadsDir      string
+	BinaryPath        string
+	RebootEnabled     bool
+	RestartFPPCommand string
+	AllowCIDRs        []string
+	AllowPorts        []int
+	CommandTimeout    time.Duration
+}
+
+type Result struct {
+	Status     string
+	Output     string
+	Error      string
+	ShouldExit bool
+}
+
+func (e *Executor) Execute(ctx context.Context, cmdType string, payload map[string]interface{}) Result {
+	ctx, cancel := context.WithTimeout(ctx, e.CommandTimeout)
+	defer cancel()
+
+	switch cmdType {
+	case "restart_agent":
+		return Result{Status: "success", Output: "exiting for restart", ShouldExit: true}
+	case "update_agent":
+		return e.updateAgent(ctx, payload)
+	case "reboot_host":
+		return e.rebootHost(ctx)
+	case "restart_fpp":
+		return e.restartFPP(ctx)
+	case "network_probe":
+		return e.networkProbe(ctx, payload)
+	default:
+		return Result{Status: "error", Error: "command_not_allowed"}
+	}
+}
+
+func (e *Executor) updateAgent(ctx context.Context, payload map[string]interface{}) Result {
+	if !e.UpdateEnabled {
+		return Result{Status: "error", Error: "updates_disabled"}
+	}
+	url, _ := payload["url"].(string)
+	sha, _ := payload["sha256"].(string)
+	if url == "" || sha == "" {
+		return Result{Status: "error", Error: "missing_update_fields"}
+	}
+
+	err := update.Apply(ctx, e.Logger, update.Params{
+		URL:          url,
+		SHA256:       sha,
+		DownloadDir:  e.DownloadsDir,
+		BinaryPath:   e.BinaryPath,
+		AllowFileExt: true,
+	})
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	return Result{Status: "success", Output: "updated", ShouldExit: true}
+}
+
+func (e *Executor) rebootHost(ctx context.Context) Result {
+	if !e.RebootEnabled {
+		return Result{Status: "error", Error: "reboot_disabled"}
+	}
+	cmd := exec.CommandContext(ctx, "/sbin/reboot")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return Result{Status: "error", Error: err.Error(), Output: string(out)}
+	}
+	return Result{Status: "success", Output: string(out)}
+}
+
+func (e *Executor) restartFPP(ctx context.Context) Result {
+	if strings.TrimSpace(e.RestartFPPCommand) == "" {
+		return Result{Status: "error", Error: "restart_fpp_not_configured"}
+	}
+	parts := strings.Fields(e.RestartFPPCommand)
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return Result{Status: "error", Error: err.Error(), Output: string(out)}
+	}
+	return Result{Status: "success", Output: string(out)}
+}
+
+func (e *Executor) networkProbe(ctx context.Context, payload map[string]interface{}) Result {
+	host, _ := payload["host"].(string)
+	mode, _ := payload["mode"].(string)
+	portFloat, _ := payload["port"].(float64)
+	port := int(portFloat)
+	if host == "" || port == 0 {
+		return Result{Status: "error", Error: "missing_host_or_port"}
+	}
+	if !e.allowedTarget(host, port) {
+		return Result{Status: "error", Error: "target_not_allowlisted"}
+	}
+
+	timeout := time.Duration(1500) * time.Millisecond
+	if t, ok := payload["timeout_ms"].(float64); ok && t > 0 {
+		timeout = time.Duration(int64(t)) * time.Millisecond
+	}
+
+	switch mode {
+	case "ping":
+		return e.pingHost(ctx, host, timeout)
+	case "tcp", "":
+		return e.tcpProbe(ctx, host, port, timeout)
+	default:
+		return Result{Status: "error", Error: "unsupported_probe_mode"}
+	}
+}
+
+func (e *Executor) pingHost(ctx context.Context, host string, timeout time.Duration) Result {
+	secs := int(timeout.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", strconv.Itoa(secs), host)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return Result{Status: "error", Error: err.Error(), Output: string(out)}
+	}
+	return Result{Status: "success", Output: string(out)}
+}
+
+func (e *Executor) tcpProbe(ctx context.Context, host string, port int, timeout time.Duration) Result {
+	dialer := net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	conn.Close()
+	return Result{Status: "success", Output: "tcp_ok"}
+}
+
+func (e *Executor) allowedTarget(host string, port int) bool {
+	if !intInSlice(port, e.AllowPorts) {
+		return false
+	}
+	ips, err := resolveHost(host)
+	if err != nil {
+		return false
+	}
+	for _, ip := range ips {
+		if !ipAllowlisted(ip, e.AllowCIDRs) {
+			return false
+		}
+	}
+	return true
+}
+
+func resolveHost(host string) ([]net.IP, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		return []net.IP{ip}, nil
+	}
+	return net.LookupIP(host)
+}
+
+func ipAllowlisted(ip net.IP, cidrs []string) bool {
+	for _, c := range cidrs {
+		_, netblock, err := net.ParseCIDR(c)
+		if err != nil {
+			continue
+		}
+		if netblock.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func intInSlice(val int, list []int) bool {
+	for _, v := range list {
+		if v == val {
+			return true
+		}
+	}
+	return false
+}

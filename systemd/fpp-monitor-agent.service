@@ -1,0 +1,15 @@
+[Unit]
+Description=FPP Monitor Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/fpp-monitor-agent/fpp-monitor-agent --config /etc/fpp-monitor-agent/config.json
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

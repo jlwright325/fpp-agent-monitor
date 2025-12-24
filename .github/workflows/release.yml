@@ -1,0 +1,45 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.20"
+
+      - name: Build binaries
+        run: |
+          set -eu
+          mkdir -p dist
+          VERSION="${GITHUB_REF_NAME#v}"
+          GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "-s -w -X main.version=$VERSION" -o dist/fpp-monitor-agent-linux-armv7 ./cmd/agent
+          GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X main.version=$VERSION" -o dist/fpp-monitor-agent-linux-arm64 ./cmd/agent
+          chmod +x dist/fpp-monitor-agent-linux-armv7 dist/fpp-monitor-agent-linux-arm64
+
+      - name: Generate checksums
+        run: |
+          set -eu
+          cd dist
+          sha256sum fpp-monitor-agent-linux-armv7 fpp-monitor-agent-linux-arm64 > checksums.txt
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/fpp-monitor-agent-linux-armv7
+            dist/fpp-monitor-agent-linux-arm64
+            dist/checksums.txt
+          generate_release_notes: true
