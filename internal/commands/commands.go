@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	"fpp-monitor-agent/internal/exec"
-	"fpp-monitor-agent/internal/httpclient"
-	"fpp-monitor-agent/internal/log"
+	"fpp-agent-monitor/internal/exec"
+	"fpp-agent-monitor/internal/httpclient"
+	"fpp-agent-monitor/internal/log"
 )
 
 type Runner struct {

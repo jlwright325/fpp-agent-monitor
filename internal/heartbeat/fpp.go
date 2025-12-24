@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"fpp-monitor-agent/internal/httpclient"
+	"fpp-agent-monitor/internal/httpclient"
 )
 
 func fetchFPPState(ctx context.Context, baseURL string, client *httpclient.Client) (*string, stateInfo) {

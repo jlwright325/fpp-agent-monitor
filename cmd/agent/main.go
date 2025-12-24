@@ -9,19 +9,19 @@ import (
 	"syscall"
 	"time"
 
-	"fpp-monitor-agent/internal/commands"
-	"fpp-monitor-agent/internal/config"
-	"fpp-monitor-agent/internal/enroll"
-	"fpp-monitor-agent/internal/exec"
-	"fpp-monitor-agent/internal/heartbeat"
-	"fpp-monitor-agent/internal/httpclient"
-	"fpp-monitor-agent/internal/log"
+	"fpp-agent-monitor/internal/commands"
+	"fpp-agent-monitor/internal/config"
+	"fpp-agent-monitor/internal/enroll"
+	"fpp-agent-monitor/internal/exec"
+	"fpp-agent-monitor/internal/heartbeat"
+	"fpp-agent-monitor/internal/httpclient"
+	"fpp-agent-monitor/internal/log"
 )
 
 var version = "dev"
 
 func main() {
-	configPath := flag.String("config", "/etc/fpp-monitor-agent/config.json", "config path")
+	configPath := flag.String("config", "/etc/fpp-agent-monitor/config.json", "config path")
 	flag.Parse()
 
 	logger := &log.Logger{}
@@ -66,8 +66,8 @@ func main() {
 		UpdateEnabled:     cfg.Update.Enabled,
 		AllowDowngrade:    cfg.Update.AllowDowngrade,
 		UpdateChannel:     cfg.Update.Channel,
-		DownloadsDir:      "/var/lib/fpp-monitor-agent/downloads",
-		BinaryPath:        "/opt/fpp-monitor-agent/fpp-monitor-agent",
+		DownloadsDir:      "/var/lib/fpp-agent-monitor/downloads",
+		BinaryPath:        "/opt/fpp-agent-monitor/fpp-agent-monitor",
 		RebootEnabled:     cfg.RebootEnabled,
 		RestartFPPCommand: cfg.RestartFPPCommand,
 		AllowCIDRs:        cfg.NetworkAllowlist.CIDRs,

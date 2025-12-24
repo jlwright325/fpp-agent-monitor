@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"fpp-monitor-agent/internal/log"
-	"fpp-monitor-agent/internal/update"
+	"fpp-agent-monitor/internal/log"
+	"fpp-agent-monitor/internal/update"
 )
 
 type Executor struct {

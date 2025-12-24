@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"fpp-monitor-agent/internal/httpclient"
-	"fpp-monitor-agent/internal/log"
+	"fpp-agent-monitor/internal/httpclient"
+	"fpp-agent-monitor/internal/log"
 )
 
 type Enroller struct {

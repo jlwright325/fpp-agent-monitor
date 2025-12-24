@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"fpp-monitor-agent/internal/log"
+	"fpp-agent-monitor/internal/log"
 )
 
 type Params struct {
