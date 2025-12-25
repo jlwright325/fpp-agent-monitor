@@ -25,7 +25,7 @@ chmod +x scripts/*.sh install/*.sh
 2) Copy the binary to the target and install:
 
 ```sh
-sudo ./install/install.sh ./dist/fpp-monitor-agent-armv7
+sudo ./install/install.sh ./dist/fpp-monitor-agent-linux-armv7
 ```
 
 3) Edit config (you can paste an `enrollment_token` and leave `device_token`/`device_id` empty for first boot):
@@ -40,6 +40,12 @@ The install script will install and start the systemd service if `systemctl` exi
 
 ```sh
 /opt/fpp-monitor-agent/fpp-monitor-agent --config /etc/fpp-monitor-agent/config.json
+```
+
+Version:
+
+```sh
+/opt/fpp-monitor-agent/fpp-monitor-agent --version
 ```
 
 ## Configuration
@@ -115,7 +121,8 @@ sudo journalctl -u fpp-monitor-agent.service
 ## Releases
 
 - Tag a version `vX.Y.Z` and push the tag.
-- GitHub Actions builds and attaches:
-  - `dist/fpp-monitor-agent-linux-armv7`
-  - `dist/fpp-monitor-agent-linux-arm64`
-  - `dist/checksums.txt`
+- GitHub Actions builds and attaches these exact release assets:
+  - `fpp-monitor-agent-linux-armv7`
+  - `fpp-monitor-agent-linux-arm64`
+  - `checksums.txt`
+- The plugin downloads the asset matching the platform and verifies `checksums.txt` contains lines in the form `sha256  <filename>` for the exact filenames above.

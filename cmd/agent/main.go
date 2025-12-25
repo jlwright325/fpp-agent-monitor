@@ -21,8 +21,14 @@ import (
 var version = "dev"
 
 func main() {
-	configPath := flag.String("config", "/etc/fpp-agent-monitor/config.json", "config path")
+	configPath := flag.String("config", "/etc/fpp-monitor-agent/config.json", "config path")
+	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
+
+	if *showVersion {
+		os.Stdout.WriteString(version + "\n")
+		return
+	}
 
 	logger := &log.Logger{}
 	cfg, err := config.Load(*configPath)
@@ -71,8 +77,8 @@ func main() {
 		UpdateEnabled:     cfg.Update.Enabled,
 		AllowDowngrade:    cfg.Update.AllowDowngrade,
 		UpdateChannel:     cfg.Update.Channel,
-		DownloadsDir:      "/var/lib/fpp-agent-monitor/downloads",
-		BinaryPath:        "/opt/fpp-agent-monitor/fpp-agent-monitor",
+		DownloadsDir:      "/var/lib/fpp-monitor-agent/downloads",
+		BinaryPath:        "/opt/fpp-monitor-agent/fpp-monitor-agent",
 		RebootEnabled:     cfg.RebootEnabled,
 		RestartFPPCommand: cfg.RestartFPPCommand,
 		AllowCIDRs:        cfg.NetworkAllowlist.CIDRs,

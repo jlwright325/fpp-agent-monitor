@@ -6,7 +6,7 @@ OUT_DIR="dist"
 mkdir -p "$OUT_DIR"
 
 build() {
-  GOOS=linux GOARCH=$1 GOARM=${2:-} \
+  CGO_ENABLED=0 GOOS=linux GOARCH=$1 GOARM=${2:-} \
     go build -ldflags "-s -w -X main.version=$VERSION" \
     -o "$OUT_DIR/fpp-monitor-agent-linux-$3" ./cmd/agent
 }
