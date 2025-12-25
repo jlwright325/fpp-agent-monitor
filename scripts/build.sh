@@ -8,10 +8,10 @@ mkdir -p "$OUT_DIR"
 build() {
   GOOS=linux GOARCH=$1 GOARM=${2:-} \
     go build -ldflags "-s -w -X main.version=$VERSION" \
-    -o "$OUT_DIR/fpp-monitor-agent-$1${2:+v$2}" ./cmd/agent
+    -o "$OUT_DIR/fpp-monitor-agent-linux-$3" ./cmd/agent
 }
 
-build arm 7
-build arm64
+build arm 7 armv7
+build arm64 "" arm64
 
 echo "built to $OUT_DIR"

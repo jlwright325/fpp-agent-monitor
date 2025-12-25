@@ -10,6 +10,18 @@ A small outbound-only management agent for FPP devices. It reports heartbeats, p
 VERSION=1.0.0 ./scripts/build.sh
 ```
 
+Or:
+
+```sh
+make build
+```
+
+If scripts are not executable:
+
+```sh
+chmod +x scripts/*.sh install/*.sh
+```
+
 2) Copy the binary to the target and install:
 
 ```sh
@@ -67,6 +79,23 @@ Environment overrides:
 Enrollment:
 - If `device_token` is empty and `enrollment_token` is set, the agent will enroll on startup, write `device_id`/`device_token`/`location_id` into the config file, and clear `enrollment_token`.
 - After enrollment, restart the service if it does not restart automatically.
+
+API endpoints:
+- `POST /v1/agent/enroll` with `{ enrollment_token, hostname, label?, agent_version, fpp_version }`
+- `POST /v1/ingest/heartbeat` with Authorization `Bearer <device_token>`
+- `GET /v1/agent/commands` and `POST /v1/agent/command-results`
+
+Local run:
+
+```sh
+./scripts/run_local.sh ./scripts/local-config.json
+```
+
+Platform detection:
+
+```sh
+./scripts/print_platform.sh
+```
 
 ## Systemd
 
