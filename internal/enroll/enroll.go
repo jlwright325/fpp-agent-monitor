@@ -27,10 +27,10 @@ type Enroller struct {
 
 type requestPayload struct {
 	EnrollmentToken string   `json:"enrollment_token"`
-	Hostname        string   `json:"hostname"`
-	AgentVersion    string   `json:"agent_version"`
+	Hostname        string   `json:"hostname,omitempty"`
+	AgentVersion    string   `json:"agent_version,omitempty"`
 	Label           string   `json:"label,omitempty"`
-	FPPVersion      *string  `json:"fpp_version"`
+	FPPVersion      *string  `json:"fpp_version,omitempty"`
 }
 
 type responsePayload struct {
