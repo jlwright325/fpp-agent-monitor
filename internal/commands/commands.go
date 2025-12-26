@@ -80,7 +80,14 @@ func (r *Runner) poll(ctx context.Context) ([]command, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.DeviceToken)
+	authSet, tokenLen := httpclient.AddDeviceAuth(req, r.DeviceToken)
+	r.Logger.Info("command_poll_auth", map[string]interface{}{
+		"auth_set":  authSet,
+		"header":    "Authorization",
+		"token_len": tokenLen,
+		"device_id": r.DeviceID,
+		"path":      path,
+	})
 
 	resp, body, err := r.Client.DoWithRetry(ctx, req)
 	if err != nil {
@@ -125,7 +132,14 @@ func (r *Runner) handleCommand(ctx context.Context, cmd command) {
 		r.Logger.Error("command_result_request_failed", map[string]interface{}{"command_id": cmd.ID, "error": err.Error()})
 		return
 	}
-	req.Header.Set("Authorization", "Bearer "+r.DeviceToken)
+	authSet, tokenLen := httpclient.AddDeviceAuth(req, r.DeviceToken)
+	r.Logger.Info("command_result_auth", map[string]interface{}{
+		"auth_set":  authSet,
+		"header":    "Authorization",
+		"token_len": tokenLen,
+		"device_id": r.DeviceID,
+		"path":      "/v1/agent/command-results",
+	})
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, _, err := r.Client.DoWithRetry(ctx, req)

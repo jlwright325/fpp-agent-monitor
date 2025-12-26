@@ -102,7 +102,14 @@ func (s *Sender) sendOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.DeviceToken)
+	authSet, tokenLen := httpclient.AddDeviceAuth(req, s.DeviceToken)
+	s.Logger.Info("heartbeat_auth", map[string]interface{}{
+		"auth_set":  authSet,
+		"header":    "Authorization",
+		"token_len": tokenLen,
+		"device_id": s.DeviceID,
+		"path":      "/v1/ingest/heartbeat",
+	})
 	req.Header.Set("Content-Type", "application/json")
 	resp, body, err := s.Client.DoWithRetry(ctx, req)
 	if err != nil {
