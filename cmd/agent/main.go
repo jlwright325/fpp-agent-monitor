@@ -35,12 +35,14 @@ func main() {
 		return
 	}
 
-	logger := &log.Logger{}
-	host, _ := os.Hostname()
-	logger.Info("agent_start", map[string]interface{}{"version": version, "hostname": host})
-
 	debugEnabled := *debugHTTP || envBool("SHOWOPS_DEBUG_HTTP")
 	dryRunEnabled := *dryRun || envBool("SHOWOPS_DRY_RUN")
+	logger := &log.Logger{Level: log.LevelError}
+	if debugEnabled {
+		logger.Level = log.LevelInfo
+	}
+	host, _ := os.Hostname()
+	logger.Info("agent_start", map[string]interface{}{"version": version, "hostname": host})
 
 	resolvedPath, checked := resolveConfigPath(*configPath)
 	if resolvedPath == "" {
