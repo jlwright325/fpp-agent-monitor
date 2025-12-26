@@ -99,7 +99,8 @@ Token flow:
 API endpoints:
 - `POST /v1/agent/enroll` with `{ enrollment_token, hostname, label?, agent_version, fpp_version }`
 - `POST /v1/ingest/heartbeat` with Authorization `Bearer <device_token>`
-- `GET /v1/agent/commands` and `POST /v1/agent/command-results`
+- `GET /v1/agent/commands/poll` returns `{ "commands": [] }`
+- `POST /v1/agent/command-results` is not implemented on the Worker; the agent disables results if it gets `404`.
 
 Enrollment response:
 ```json

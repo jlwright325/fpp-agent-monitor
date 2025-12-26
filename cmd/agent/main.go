@@ -113,17 +113,18 @@ func main() {
 		}
 
 		commandRunner := &commands.Runner{
-			Client:       httpClient,
-			Logger:       logger,
-			APIBaseURL:   cfg.APIBaseURL,
-			DeviceID:     cfg.DeviceID,
-			DeviceToken:  cfg.DeviceToken,
-			AgentVersion: version,
-			Interval:     time.Duration(cfg.CommandPollIntervalSec) * time.Second,
-			MaxBackoff:   60 * time.Second,
-			Executor:     executor,
-			DebugHTTP:    debugEnabled,
-			DryRun:       dryRunEnabled,
+			Client:                httpClient,
+			Logger:                logger,
+			APIBaseURL:            cfg.APIBaseURL,
+			DeviceID:              cfg.DeviceID,
+			DeviceToken:           cfg.DeviceToken,
+			AgentVersion:          version,
+			Interval:              time.Duration(cfg.CommandPollIntervalSec) * time.Second,
+			MaxBackoff:            60 * time.Second,
+			Executor:              executor,
+			DebugHTTP:             debugEnabled,
+			DryRun:                dryRunEnabled,
+			CommandResultsEnabled: true,
 		}
 
 		runCtx, cancelRun := context.WithCancel(ctx)

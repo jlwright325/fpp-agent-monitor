@@ -17,17 +17,19 @@ import (
 )
 
 type Runner struct {
-	Client       *httpclient.Client
-	Logger       *log.Logger
-	APIBaseURL   string
-	DeviceID     string
-	DeviceToken  string
-	AgentVersion string
-	Interval     time.Duration
-	MaxBackoff   time.Duration
-	Executor     *exec.Executor
-	DebugHTTP    bool
-	DryRun       bool
+	Client                       *httpclient.Client
+	Logger                       *log.Logger
+	APIBaseURL                   string
+	DeviceID                     string
+	DeviceToken                  string
+	AgentVersion                 string
+	Interval                     time.Duration
+	MaxBackoff                   time.Duration
+	Executor                     *exec.Executor
+	DebugHTTP                    bool
+	DryRun                       bool
+	CommandResultsEnabled        bool
+	commandResultsDisabledLogged bool
 }
 
 type command struct {
@@ -78,8 +80,8 @@ func (r *Runner) poll(ctx context.Context) ([]command, error) {
 	q := url.Values{}
 	q.Set("device_id", r.DeviceID)
 	q.Set("agent_version", r.AgentVersion)
-	url := r.APIBaseURL + "/v1/agent/commands?" + q.Encode()
-	path := "/v1/agent/commands"
+	url := r.APIBaseURL + "/v1/agent/commands/poll?" + q.Encode()
+	path := "/v1/agent/commands/poll"
 	r.Logger.Info("command_poll_request", map[string]interface{}{"path": path})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -144,6 +146,10 @@ func (r *Runner) handleCommand(ctx context.Context, cmd command) {
 	result := r.Executor.Execute(ctx, cmd.Type, cmd.Payload)
 	finished := time.Now().Unix()
 
+	if !r.CommandResultsEnabled {
+		return
+	}
+
 	payload := map[string]interface{}{
 		"command_id":  cmd.ID,
 		"status":      result.Status,
@@ -189,6 +195,16 @@ func (r *Runner) handleCommand(ctx context.Context, cmd command) {
 	resp, _, err := r.Client.DoWithRetry(ctx, req)
 	if err != nil {
 		r.Logger.Warn("command_result_send_failed", map[string]interface{}{"command_id": cmd.ID, "error": err.Error()})
+	} else if resp.StatusCode == http.StatusNotFound {
+		if !r.commandResultsDisabledLogged {
+			r.Logger.Warn("command_result_not_supported", map[string]interface{}{
+				"command_id": cmd.ID,
+				"status":     resp.StatusCode,
+				"path":       "/v1/agent/command-results",
+			})
+			r.commandResultsDisabledLogged = true
+		}
+		r.CommandResultsEnabled = false
 	} else if resp.StatusCode >= 300 {
 		r.Logger.Warn("command_result_send_failed", map[string]interface{}{"command_id": cmd.ID, "status": resp.StatusCode})
 	}
