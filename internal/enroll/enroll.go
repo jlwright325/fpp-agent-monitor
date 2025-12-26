@@ -70,6 +70,14 @@ func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 		Label:           e.Label,
 		FPPVersion:      fetchFPPVersion(ctx, e.FPPBaseURL, e.Client),
 	}
+	e.Logger.Info("enroll_request", map[string]interface{}{
+		"path":          "/v1/agent/enroll",
+		"hostname":      payload.Hostname,
+		"label":         payload.Label,
+		"agent_version": payload.AgentVersion,
+		"fpp_version":   payload.FPPVersion,
+		"token_len":     len(payload.EnrollmentToken),
+	})
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err

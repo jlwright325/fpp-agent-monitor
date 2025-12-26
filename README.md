@@ -128,3 +128,4 @@ sudo journalctl -u fpp-monitor-agent.service
   - `fpp-monitor-agent-linux-arm64`
   - `checksums.txt`
 - The plugin downloads the asset matching the platform and verifies `checksums.txt` contains lines in the form `sha256  <filename>` for the exact filenames above.
+- To overwrite an existing tag (for example, `v0.1.3`), run the `release` workflow manually and set the tag input to the existing tag; assets are replaced in-place.
