@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/fpp-monitor-agent/fpp-monitor-agent --config /etc/fpp-monitor-agent/config.json
+ExecStart=/opt/fpp-monitor-agent/fpp-monitor-agent
 Restart=always
 RestartSec=2
 StandardOutput=journal

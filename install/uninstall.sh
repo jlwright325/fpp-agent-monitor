@@ -7,7 +7,7 @@ if [ "${1:-}" = "--purge" ]; then
 fi
 
 BIN_DST_DIR="/opt/fpp-monitor-agent"
-CFG_DIR="/etc/fpp-monitor-agent"
+CFG_FILE="/home/fpp/media/config/fpp-monitor-agent.json"
 UNIT_DST="/etc/systemd/system/fpp-monitor-agent.service"
 
 if command -v systemctl >/dev/null 2>&1; then
@@ -24,7 +24,8 @@ fi
 rm -f "$BIN_DST_DIR/fpp-monitor-agent"
 
 if [ $PURGE -eq 1 ]; then
-  rm -rf "$CFG_DIR" "/var/lib/fpp-monitor-agent"
+  rm -f "$CFG_FILE"
+  rm -rf "/var/lib/fpp-monitor-agent"
 fi
 
 echo "uninstalled"

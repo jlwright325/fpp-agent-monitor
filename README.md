@@ -31,7 +31,7 @@ sudo ./install/install.sh ./dist/fpp-monitor-agent-linux-armv7
 3) Edit config (you can paste an `enrollment_token` and leave `device_token`/`device_id` empty for first boot):
 
 ```sh
-sudo nano /etc/fpp-monitor-agent/config.json
+sudo nano /home/fpp/media/config/fpp-monitor-agent.json
 ```
 
 The install script will install and start the systemd service if `systemctl` exists.
@@ -39,7 +39,7 @@ The install script will install and start the systemd service if `systemctl` exi
 ## Run (manual)
 
 ```sh
-/opt/fpp-monitor-agent/fpp-monitor-agent --config /etc/fpp-monitor-agent/config.json
+/opt/fpp-monitor-agent/fpp-monitor-agent
 ```
 
 Version:
@@ -50,7 +50,9 @@ Version:
 
 ## Configuration
 
-Config file path: `/etc/fpp-monitor-agent/config.json`
+Config file path (plugin default): `/home/fpp/media/config/fpp-monitor-agent.json`
+Fallbacks: `/etc/fpp-monitor-agent/config.json`, `./config.json`
+Overrides: `--config <path>` or `SHOWOPS_CONFIG_PATH`
 
 ```json
 {

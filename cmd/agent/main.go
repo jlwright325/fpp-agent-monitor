@@ -21,7 +21,7 @@ import (
 var version = "dev"
 
 func main() {
-	configPath := flag.String("config", "/etc/fpp-monitor-agent/config.json", "config path")
+	configPath := flag.String("config", "", "config path")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
 
@@ -31,9 +31,19 @@ func main() {
 	}
 
 	logger := &log.Logger{}
-	cfg, err := config.Load(*configPath)
+	host, _ := os.Hostname()
+	logger.Info("agent_start", map[string]interface{}{"version": version, "hostname": host})
+
+	resolvedPath, checked := resolveConfigPath(*configPath)
+	if resolvedPath == "" {
+		logger.Error("config_missing", map[string]interface{}{"checked_paths": checked})
+		os.Exit(1)
+	}
+	logger.Info("config_selected", map[string]interface{}{"path": resolvedPath})
+
+	cfg, err := config.Load(resolvedPath)
 	if err != nil {
-		logger.Error("config_load_failed", map[string]interface{}{"error": err.Error(), "path": *configPath})
+		logger.Error("config_load_failed", map[string]interface{}{"error": err.Error(), "path": resolvedPath})
 		os.Exit(1)
 	}
 
@@ -65,8 +75,8 @@ func main() {
 			cfg.Label = resp.Label
 		}
 		cfg.EnrollmentToken = ""
-		if err := config.Save(*configPath, cfg); err != nil {
-			logger.Error("config_write_failed", map[string]interface{}{"error": err.Error(), "path": *configPath})
+		if err := config.Save(resolvedPath, cfg); err != nil {
+			logger.Error("config_write_failed", map[string]interface{}{"error": err.Error(), "path": resolvedPath})
 			os.Exit(1)
 		}
 		logger.Info("enrollment_success", map[string]interface{}{"device_id": cfg.DeviceID})
@@ -124,4 +134,42 @@ func main() {
 	<-ctx.Done()
 	logger.Info("shutdown", map[string]interface{}{"signal": "term"})
 	wg.Wait()
+}
+
+func resolveConfigPath(flagValue string) (string, []string) {
+	var checked []string
+	if flagValue != "" {
+		checked = append(checked, flagValue)
+		if fileExists(flagValue) {
+			return flagValue, checked
+		}
+		return "", checked
+	}
+	if envPath := os.Getenv("SHOWOPS_CONFIG_PATH"); envPath != "" {
+		checked = append(checked, envPath)
+		if fileExists(envPath) {
+			return envPath, checked
+		}
+		return "", checked
+	}
+	defaults := []string{
+		"/home/fpp/media/config/fpp-monitor-agent.json",
+		"/etc/fpp-monitor-agent/config.json",
+		"./config.json",
+	}
+	checked = append(checked, defaults...)
+	for _, path := range defaults {
+		if fileExists(path) {
+			return path, checked
+		}
+	}
+	return "", checked
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
