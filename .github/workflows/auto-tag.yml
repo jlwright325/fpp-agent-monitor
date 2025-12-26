@@ -41,9 +41,7 @@ jobs:
           fi
 
           base="${last_tag#v}"
-          IFS=. read -r major minor patch <<EOF
-          ${base}
-EOF
+          IFS=. read -r major minor patch <<< "${base}"
 
           major="${major:-0}"
           minor="${minor:-0}"
