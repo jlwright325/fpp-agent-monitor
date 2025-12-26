@@ -39,13 +39,7 @@ jobs:
             echo "tag=${{ github.ref_name }}" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          tag="$(python - <<'PY'
-import json
-with open("latest.json", "r", encoding="utf-8") as f:
-    data = json.load(f)
-print(data.get("version", "").strip())
-PY
-)"
+          tag="$(python -c 'import json; f=open("latest.json","r",encoding="utf-8"); print(json.load(f).get("version","").strip())')"
           if [ -z "${tag}" ]; then
             echo "latest.json did not contain a version" >&2
             exit 1
