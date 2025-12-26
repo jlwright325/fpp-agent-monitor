@@ -51,6 +51,9 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	if strings.TrimSpace(m.TunnelToken) == "" {
 		return OpenResult{}, errors.New("tunnel_token_missing")
 	}
+	if strings.TrimSpace(m.TunnelHostname) == "" {
+		return OpenResult{}, errors.New("tunnel_hostname_missing")
+	}
 
 	target := strings.TrimSpace(params.TargetURL)
 	if target == "" {
@@ -74,15 +77,6 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 		"--token",
 		m.TunnelToken,
 	)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return OpenResult{}, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return OpenResult{}, err
-	}
-
 	if err := cmd.Start(); err != nil {
 		return OpenResult{}, err
 	}
@@ -90,14 +84,6 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	m.session = params.SessionID
 
 	url := strings.TrimSpace(m.TunnelHostname)
-	if url == "" {
-		parsed, err := waitForTunnelURL(stdout, stderr, 20*time.Second)
-		if err != nil {
-			m.stopLocked()
-			return OpenResult{}, err
-		}
-		url = parsed
-	}
 	if url != "" && !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
