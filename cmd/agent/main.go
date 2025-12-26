@@ -19,6 +19,7 @@ import (
 	"fpp-agent-monitor/internal/heartbeat"
 	"fpp-agent-monitor/internal/httpclient"
 	"fpp-agent-monitor/internal/log"
+	"fpp-agent-monitor/internal/remote"
 )
 
 var version = "dev"
@@ -101,6 +102,12 @@ func main() {
 			os.Exit(1)
 		}
 
+		sessionManager := &remote.Manager{
+			Logger:          logger,
+			TunnelToken:     cfg.CloudflaredToken,
+			TunnelHostname:  cfg.CloudflaredHostname,
+		}
+
 		executor := &exec.Executor{
 			Logger:            logger,
 			UpdateEnabled:     cfg.Update.Enabled,
@@ -113,6 +120,7 @@ func main() {
 			AllowCIDRs:        cfg.NetworkAllowlist.CIDRs,
 			AllowPorts:        cfg.NetworkAllowlist.Ports,
 			CommandTimeout:    60 * time.Second,
+			SessionManager:    sessionManager,
 		}
 
 		heartbeatSender := &heartbeat.Sender{

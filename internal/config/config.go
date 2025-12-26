@@ -20,6 +20,8 @@ type Config struct {
 	FPPCollectEnabled      *bool            `json:"fpp_collect_enabled"`
 	FPPCollectIntervalSec  int              `json:"fpp_collect_interval_sec"`
 	FPPBaseURL             string           `json:"fpp_base_url"`
+	CloudflaredToken       string           `json:"cloudflared_token"`
+	CloudflaredHostname    string           `json:"cloudflared_hostname"`
 	Update                 UpdateConfig     `json:"update"`
 	NetworkAllowlist       NetworkAllowlist `json:"network_allowlist"`
 	RebootEnabled          bool             `json:"reboot_enabled"`
@@ -145,4 +147,6 @@ func normalize(cfg *Config) {
 	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
 	cfg.LocationID = strings.TrimSpace(cfg.LocationID)
 	cfg.Label = strings.TrimSpace(cfg.Label)
+	cfg.CloudflaredToken = strings.TrimSpace(cfg.CloudflaredToken)
+	cfg.CloudflaredHostname = strings.TrimSpace(cfg.CloudflaredHostname)
 }

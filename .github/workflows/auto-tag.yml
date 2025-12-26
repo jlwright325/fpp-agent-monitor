@@ -1,0 +1,74 @@
+name: auto-tag
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create semantic tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+
+          msg="$(git log -1 --pretty=%s)"
+          case "${msg}" in
+            "chore: update latest.json") echo "latest.json bump commit; skipping tag." ; exit 0 ;;
+          esac
+
+          case "${msg}" in
+            major:*|MAJOR:*) bump="major" ;;
+            minor:*|MINOR:*) bump="minor" ;;
+            patch:*|PATCH:*) bump="patch" ;;
+            *) bump="patch" ;;
+          esac
+
+          last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [ -z "${last_tag}" ]; then
+            last_tag="v0.0.0"
+          fi
+
+          base="${last_tag#v}"
+          IFS=. read -r major minor patch <<EOF
+          ${base}
+EOF
+
+          major="${major:-0}"
+          minor="${minor:-0}"
+          patch="${patch:-0}"
+
+          case "${bump}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          new_tag="v${major}.${minor}.${patch}"
+          if git rev-parse -q --verify "refs/tags/${new_tag}" >/dev/null; then
+            echo "Tag ${new_tag} already exists; skipping."
+            exit 0
+          fi
+
+          printf '{ "version": "%s" }\n' "${new_tag}" > latest.json
+          if ! git diff --quiet -- latest.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add latest.json
+            git commit -m "chore: update latest.json"
+            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
+          fi
+
+          git tag "${new_tag}"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${new_tag}"

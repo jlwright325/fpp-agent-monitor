@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"fpp-agent-monitor/internal/log"
+	"fpp-agent-monitor/internal/remote"
 	"fpp-agent-monitor/internal/update"
 )
 
@@ -24,6 +25,7 @@ type Executor struct {
 	AllowCIDRs        []string
 	AllowPorts        []int
 	CommandTimeout    time.Duration
+	SessionManager    *remote.Manager
 }
 
 type Result struct {
@@ -48,6 +50,10 @@ func (e *Executor) Execute(ctx context.Context, cmdType string, payload map[stri
 		return e.restartFPP(ctx)
 	case "network_probe":
 		return e.networkProbe(ctx, payload)
+	case "session_open":
+		return e.openSession(ctx, payload)
+	case "session_close":
+		return e.closeSession(ctx, payload)
 	default:
 		return Result{Status: "error", Error: "command_not_allowed"}
 	}
@@ -126,6 +132,36 @@ func (e *Executor) networkProbe(ctx context.Context, payload map[string]interfac
 	default:
 		return Result{Status: "error", Error: "unsupported_probe_mode"}
 	}
+}
+
+func (e *Executor) openSession(ctx context.Context, payload map[string]interface{}) Result {
+	if e.SessionManager == nil {
+		return Result{Status: "error", Error: "session_manager_missing"}
+	}
+	sessionID, _ := payload["session_id"].(string)
+	targetURL, _ := payload["target_url"].(string)
+	idleFloat, _ := payload["idle_timeout_sec"].(float64)
+	idleTimeout := int(idleFloat)
+	result, err := e.SessionManager.Open(ctx, remote.OpenParams{
+		SessionID:      sessionID,
+		TargetURL:      targetURL,
+		IdleTimeoutSec: idleTimeout,
+	})
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	return Result{Status: "success", Output: remote.EncodeResult(result)}
+}
+
+func (e *Executor) closeSession(ctx context.Context, payload map[string]interface{}) Result {
+	if e.SessionManager == nil {
+		return Result{Status: "error", Error: "session_manager_missing"}
+	}
+	sessionID, _ := payload["session_id"].(string)
+	if err := e.SessionManager.Close(sessionID); err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	return Result{Status: "success", Output: "closed"}
 }
 
 func (e *Executor) pingHost(ctx context.Context, host string, timeout time.Duration) Result {
