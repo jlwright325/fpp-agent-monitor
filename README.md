@@ -170,3 +170,4 @@ curl -s -X POST https://api.showops.io/v1/agent/enroll \\
   - `checksums.txt`
 - The plugin downloads the asset matching the platform and verifies `checksums.txt` contains lines in the form `sha256  <filename>` for the exact filenames above.
 - To overwrite an existing tag (for example, `v0.1.3`), run the `release` workflow manually and set the tag input to the existing tag; assets are replaced in-place.
+- Installers use `latest.json` at repo root as the source of truth for the current version tag.
