@@ -85,6 +85,10 @@ func main() {
 		}
 		logger.Info("enrollment_success", map[string]interface{}{"device_id": cfg.DeviceID})
 	}
+	if cfg.DeviceToken == "" {
+		logger.Error("missing_device_token", map[string]interface{}{"path": resolvedPath})
+		os.Exit(1)
+	}
 
 	executor := &exec.Executor{
 		Logger:            logger,

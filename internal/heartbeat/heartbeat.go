@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -60,6 +61,10 @@ func (s *Sender) Run(ctx context.Context) {
 			return
 		}
 		if err := s.sendOnce(ctx); err != nil {
+			if errors.Is(err, errUnauthorized) {
+				s.Logger.Warn("heartbeat_unauthorized", map[string]interface{}{"path": "/v1/ingest/heartbeat"})
+				return
+			}
 			s.Logger.Warn("heartbeat_failed", map[string]interface{}{"error": err.Error()})
 			if backoff < s.MaxBackoff {
 				backoff *= 2
@@ -115,12 +120,19 @@ func (s *Sender) sendOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	s.Logger.Info("heartbeat_response", map[string]interface{}{
+		"status_code": resp.StatusCode,
+		"path":        "/v1/ingest/heartbeat",
+	})
 	if resp.StatusCode >= 300 {
 		s.Logger.Warn("heartbeat_http_error", map[string]interface{}{
 			"status_code": resp.StatusCode,
 			"body":        truncateBody(body, 2048),
 			"path":        "/v1/ingest/heartbeat",
 		})
+		if resp.StatusCode == http.StatusUnauthorized {
+			return errUnauthorized
+		}
 		return httpStatusError(resp.StatusCode)
 	}
 	return nil
@@ -147,3 +159,5 @@ func truncateBody(body []byte, max int) string {
 	}
 	return string(body[:max])
 }
+
+var errUnauthorized = errors.New("unauthorized")
