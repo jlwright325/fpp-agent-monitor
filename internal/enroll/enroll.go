@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"fpp-agent-monitor/internal/httpclient"
@@ -23,6 +24,8 @@ type Enroller struct {
 	Label        string
 	FPPBaseURL   string
 	MaxBackoff   time.Duration
+	DebugHTTP    bool
+	DryRun       bool
 }
 
 type requestPayload struct {
@@ -63,8 +66,9 @@ func (e *Enroller) Run(ctx context.Context) (*responsePayload, error) {
 
 func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 	hostname, _ := os.Hostname()
+	token := strings.TrimSpace(e.Token)
 	payload := requestPayload{
-		EnrollmentToken: e.Token,
+		EnrollmentToken: token,
 		Hostname:        hostname,
 		AgentVersion:    e.AgentVersion,
 		Label:           e.Label,
@@ -77,17 +81,30 @@ func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 		"agent_version": payload.AgentVersion,
 		"fpp_version":   payload.FPPVersion,
 		"token_len":     len(payload.EnrollmentToken),
+		"token_source":  "enrollment_token",
 	})
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
 	url := e.APIBaseURL + "/v1/agent/enroll"
+	if e.DebugHTTP {
+		e.Logger.Info("enroll_http", map[string]interface{}{
+			"method":      http.MethodPost,
+			"url":         url,
+			"path":        "/v1/agent/enroll",
+			"auth_scheme": "none",
+		})
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if e.DryRun {
+		e.Logger.Info("enroll_dry_run", map[string]interface{}{"path": "/v1/agent/enroll"})
+		return nil, errDryRun
+	}
 
 	resp, body, err := e.Client.DoWithRetry(ctx, req)
 	if err != nil {
@@ -108,6 +125,10 @@ func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 	if out.DeviceID == "" || out.DeviceToken == "" {
 		return nil, errInvalidResponse
 	}
+	out.DeviceID = strings.TrimSpace(out.DeviceID)
+	out.DeviceToken = strings.TrimSpace(out.DeviceToken)
+	out.LocationID = strings.TrimSpace(out.LocationID)
+	out.Label = strings.TrimSpace(out.Label)
 	return &out, nil
 }
 
@@ -123,6 +144,7 @@ type statusError int
 func (s statusError) Error() string { return "http_status_" + strconv.Itoa(int(s)) }
 
 var errInvalidResponse = errors.New("invalid_enroll_response")
+var errDryRun = errors.New("dry_run")
 
 func fetchFPPVersion(ctx context.Context, baseURL string, client *httpclient.Client) *string {
 	if baseURL == "" || client == nil {

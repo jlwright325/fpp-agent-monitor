@@ -83,20 +83,45 @@ Environment overrides:
 - `FPP_MONITOR_API_BASE_URL`
 - `FPP_MONITOR_DEVICE_TOKEN`
 - `FPP_MONITOR_DEVICE_ID`
+- `SHOWOPS_API_BASE_URL` (preferred override)
+- `SHOWOPS_CONFIG_PATH`
+- `SHOWOPS_DEBUG_HTTP=1`
+- `SHOWOPS_DRY_RUN=1`
 
 Enrollment:
 - If `device_token` is empty and `enrollment_token` is set, the agent will enroll on startup, write `device_id`/`device_token`/`location_id` into the config file, and clear `enrollment_token`.
 - After enrollment, restart the service if it does not restart automatically.
+Token flow:
+- `enrollment_token` is used only once for `POST /v1/agent/enroll`.
+- The API returns `device_id` + `device_token`.
+- The agent persists those to config and uses `Authorization: Bearer <device_token>` for heartbeat + command polling.
 
 API endpoints:
 - `POST /v1/agent/enroll` with `{ enrollment_token, hostname, label?, agent_version, fpp_version }`
 - `POST /v1/ingest/heartbeat` with Authorization `Bearer <device_token>`
 - `GET /v1/agent/commands` and `POST /v1/agent/command-results`
 
+Enrollment response:
+```json
+{
+  "device_id": "uuid",
+  "device_token": "dtok_...",
+  "location_id": "loc_...",
+  "label": "Stage Left"
+}
+```
+
 Local run:
 
 ```sh
 ./scripts/run_local.sh ./scripts/local-config.json
+```
+
+Debug/dry-run:
+
+```sh
+/opt/fpp-monitor-agent/fpp-monitor-agent --debug-http
+/opt/fpp-monitor-agent/fpp-monitor-agent --dry-run
 ```
 
 Platform detection:
@@ -119,6 +144,20 @@ sudo journalctl -u fpp-monitor-agent.service
 - If the agent is not sending heartbeats, verify `api_base_url`, `device_token`, and outbound network access.
 - If command execution fails, check journal logs for `command_result_send_failed` and ensure the command is allowlisted.
 - For `network_probe`, ensure the host and port are inside the `network_allowlist` CIDRs/ports.
+
+Verify on device:
+
+```sh
+sudo journalctl -u fpp-monitor-agent.service -n 200 --no-pager
+```
+
+Example curl (enroll):
+
+```sh
+curl -s -X POST https://api.showops.io/v1/agent/enroll \\
+  -H "Content-Type: application/json" \\
+  -d '{ "enrollment_token": "etok_...", "hostname": "fpp-main" }'
+```
 
 ## Releases
 

@@ -24,6 +24,8 @@ type Sender struct {
 	FPPBaseURL   string
 	Interval     time.Duration
 	MaxBackoff   time.Duration
+	DebugHTTP    bool
+	DryRun       bool
 }
 
 type payload struct {
@@ -54,16 +56,15 @@ type resourcesPayload struct {
 	DiskFreeMB    *float64 `json:"disk_free_mb"`
 }
 
-func (s *Sender) Run(ctx context.Context) {
+func (s *Sender) Run(ctx context.Context) error {
 	backoff := s.Interval
 	for {
 		if ctx.Err() != nil {
-			return
+			return nil
 		}
 		if err := s.sendOnce(ctx); err != nil {
-			if errors.Is(err, errUnauthorized) {
-				s.Logger.Warn("heartbeat_unauthorized", map[string]interface{}{"path": "/v1/ingest/heartbeat"})
-				return
+			if errors.Is(err, ErrUnauthorized) {
+				return ErrUnauthorized
 			}
 			s.Logger.Warn("heartbeat_failed", map[string]interface{}{"error": err.Error()})
 			if backoff < s.MaxBackoff {
@@ -107,15 +108,28 @@ func (s *Sender) sendOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	authSet, tokenLen := httpclient.AddDeviceAuth(req, s.DeviceToken)
+	authSet, tokenLen, tokenSource := httpclient.AddDeviceAuth(req, s.DeviceToken)
 	s.Logger.Info("heartbeat_auth", map[string]interface{}{
 		"auth_set":  authSet,
 		"header":    "Authorization",
 		"token_len": tokenLen,
+		"source":    tokenSource,
 		"device_id": s.DeviceID,
 		"path":      "/v1/ingest/heartbeat",
 	})
+	if s.DebugHTTP {
+		s.Logger.Info("heartbeat_request", map[string]interface{}{
+			"method":      http.MethodPost,
+			"url":         url,
+			"path":        "/v1/ingest/heartbeat",
+			"auth_scheme": authScheme(authSet),
+		})
+	}
 	req.Header.Set("Content-Type", "application/json")
+	if s.DryRun {
+		s.Logger.Info("heartbeat_dry_run", map[string]interface{}{"path": "/v1/ingest/heartbeat"})
+		return nil
+	}
 	resp, body, err := s.Client.DoWithRetry(ctx, req)
 	if err != nil {
 		return err
@@ -125,14 +139,19 @@ func (s *Sender) sendOnce(ctx context.Context) error {
 		"path":        "/v1/ingest/heartbeat",
 	})
 	if resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusUnauthorized {
+			s.Logger.Warn("device_token_invalid", map[string]interface{}{
+				"status_code": resp.StatusCode,
+				"body":        truncateBody(body, 2048),
+				"path":        "/v1/ingest/heartbeat",
+			})
+			return ErrUnauthorized
+		}
 		s.Logger.Warn("heartbeat_http_error", map[string]interface{}{
 			"status_code": resp.StatusCode,
 			"body":        truncateBody(body, 2048),
 			"path":        "/v1/ingest/heartbeat",
 		})
-		if resp.StatusCode == http.StatusUnauthorized {
-			return errUnauthorized
-		}
 		return httpStatusError(resp.StatusCode)
 	}
 	return nil
@@ -160,4 +179,11 @@ func truncateBody(body []byte, max int) string {
 	return string(body[:max])
 }
 
-var errUnauthorized = errors.New("unauthorized")
+func authScheme(authSet bool) string {
+	if authSet {
+		return "bearer"
+	}
+	return "none"
+}
+
+var ErrUnauthorized = errors.New("unauthorized")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +26,8 @@ type Runner struct {
 	Interval     time.Duration
 	MaxBackoff   time.Duration
 	Executor     *exec.Executor
+	DebugHTTP    bool
+	DryRun       bool
 }
 
 type command struct {
@@ -39,14 +42,17 @@ type response struct {
 	Commands []command `json:"commands"`
 }
 
-func (r *Runner) Run(ctx context.Context) {
+func (r *Runner) Run(ctx context.Context) error {
 	backoff := r.Interval
 	for {
 		if ctx.Err() != nil {
-			return
+			return nil
 		}
 		cmds, err := r.poll(ctx)
 		if err != nil {
+			if errors.Is(err, ErrUnauthorized) {
+				return ErrUnauthorized
+			}
 			r.Logger.Warn("command_poll_failed", map[string]interface{}{"error": err.Error()})
 			if backoff < r.MaxBackoff {
 				backoff *= 2
@@ -60,7 +66,7 @@ func (r *Runner) Run(ctx context.Context) {
 		backoff = r.Interval
 		for _, cmd := range cmds {
 			if ctx.Err() != nil {
-				return
+				return nil
 			}
 			r.handleCommand(ctx, cmd)
 		}
@@ -80,20 +86,45 @@ func (r *Runner) poll(ctx context.Context) ([]command, error) {
 	if err != nil {
 		return nil, err
 	}
-	authSet, tokenLen := httpclient.AddDeviceAuth(req, r.DeviceToken)
+	authSet, tokenLen, tokenSource := httpclient.AddDeviceAuth(req, r.DeviceToken)
 	r.Logger.Info("command_poll_auth", map[string]interface{}{
 		"auth_set":  authSet,
 		"header":    "Authorization",
 		"token_len": tokenLen,
+		"source":    tokenSource,
 		"device_id": r.DeviceID,
 		"path":      path,
 	})
+	if r.DebugHTTP {
+		r.Logger.Info("command_poll_http", map[string]interface{}{
+			"method":      http.MethodGet,
+			"url":         url,
+			"path":        path,
+			"auth_scheme": authScheme(authSet),
+		})
+	}
+	if r.DryRun {
+		r.Logger.Info("command_poll_dry_run", map[string]interface{}{"path": path})
+		return nil, nil
+	}
 
 	resp, body, err := r.Client.DoWithRetry(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	r.Logger.Info("command_poll_response", map[string]interface{}{
+		"status_code": resp.StatusCode,
+		"path":        path,
+	})
 	if resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusUnauthorized {
+			r.Logger.Warn("device_token_invalid", map[string]interface{}{
+				"status_code": resp.StatusCode,
+				"body":        truncateBody(body, 2048),
+				"path":        path,
+			})
+			return nil, ErrUnauthorized
+		}
 		r.Logger.Warn("command_poll_http_error", map[string]interface{}{
 			"status_code": resp.StatusCode,
 			"body":        truncateBody(body, 2048),
@@ -132,14 +163,27 @@ func (r *Runner) handleCommand(ctx context.Context, cmd command) {
 		r.Logger.Error("command_result_request_failed", map[string]interface{}{"command_id": cmd.ID, "error": err.Error()})
 		return
 	}
-	authSet, tokenLen := httpclient.AddDeviceAuth(req, r.DeviceToken)
+	authSet, tokenLen, tokenSource := httpclient.AddDeviceAuth(req, r.DeviceToken)
 	r.Logger.Info("command_result_auth", map[string]interface{}{
 		"auth_set":  authSet,
 		"header":    "Authorization",
 		"token_len": tokenLen,
+		"source":    tokenSource,
 		"device_id": r.DeviceID,
 		"path":      "/v1/agent/command-results",
 	})
+	if r.DebugHTTP {
+		r.Logger.Info("command_result_http", map[string]interface{}{
+			"method":      http.MethodPost,
+			"url":         r.APIBaseURL + "/v1/agent/command-results",
+			"path":        "/v1/agent/command-results",
+			"auth_scheme": authScheme(authSet),
+		})
+	}
+	if r.DryRun {
+		r.Logger.Info("command_result_dry_run", map[string]interface{}{"command_id": cmd.ID})
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, _, err := r.Client.DoWithRetry(ctx, req)
@@ -173,3 +217,12 @@ func truncateBody(body []byte, max int) string {
 	}
 	return string(body[:max])
 }
+
+func authScheme(authSet bool) string {
+	if authSet {
+		return "bearer"
+	}
+	return "none"
+}
+
+var ErrUnauthorized = errors.New("unauthorized")

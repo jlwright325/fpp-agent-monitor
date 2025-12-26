@@ -46,6 +46,7 @@ func Load(path string) (*Config, error) {
 	}
 	applyEnvOverrides(&cfg)
 	setDefaults(&cfg)
+	normalize(&cfg)
 	if err := validate(&cfg); err != nil {
 		return nil, err
 	}
@@ -126,4 +127,13 @@ func validate(cfg *Config) error {
 		return errors.New("device_id is required when device_token is set")
 	}
 	return nil
+}
+
+func normalize(cfg *Config) {
+	cfg.APIBaseURL = strings.TrimSpace(cfg.APIBaseURL)
+	cfg.EnrollmentToken = strings.TrimSpace(cfg.EnrollmentToken)
+	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
+	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.LocationID = strings.TrimSpace(cfg.LocationID)
+	cfg.Label = strings.TrimSpace(cfg.Label)
 }

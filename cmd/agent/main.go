@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -23,6 +25,8 @@ var version = "dev"
 func main() {
 	configPath := flag.String("config", "", "config path")
 	showVersion := flag.Bool("version", false, "print version")
+	debugHTTP := flag.Bool("debug-http", false, "log HTTP URLs and auth scheme")
+	dryRun := flag.Bool("dry-run", false, "log requests without sending")
 	flag.Parse()
 
 	if *showVersion {
@@ -33,6 +37,9 @@ func main() {
 	logger := &log.Logger{}
 	host, _ := os.Hostname()
 	logger.Info("agent_start", map[string]interface{}{"version": version, "hostname": host})
+
+	debugEnabled := *debugHTTP || envBool("SHOWOPS_DEBUG_HTTP")
+	dryRunEnabled := *dryRun || envBool("SHOWOPS_DRY_RUN")
 
 	resolvedPath, checked := resolveConfigPath(*configPath)
 	if resolvedPath == "" {
@@ -55,93 +62,115 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if cfg.DeviceToken == "" && cfg.EnrollmentToken != "" {
-		logger.Info("enrollment_start", map[string]interface{}{"api_base_url": cfg.APIBaseURL})
-		enroller := &enroll.Enroller{
+	retryBackoff := 5 * time.Second
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		if cfg.DeviceToken == "" && cfg.EnrollmentToken == "" {
+			logger.Error("enrollment_missing_token", map[string]interface{}{"path": resolvedPath})
+			os.Exit(1)
+		}
+
+		if cfg.DeviceToken == "" && cfg.EnrollmentToken != "" {
+			if err := runEnrollment(ctx, logger, httpClient, cfg, resolvedPath, version, debugEnabled, dryRunEnabled); err != nil {
+				logger.Error("enrollment_failed", map[string]interface{}{"error": err.Error()})
+				os.Exit(1)
+			}
+		}
+		if cfg.DeviceToken == "" {
+			logger.Error("missing_device_token", map[string]interface{}{"path": resolvedPath})
+			os.Exit(1)
+		}
+
+		executor := &exec.Executor{
+			Logger:            logger,
+			UpdateEnabled:     cfg.Update.Enabled,
+			AllowDowngrade:    cfg.Update.AllowDowngrade,
+			UpdateChannel:     cfg.Update.Channel,
+			DownloadsDir:      "/var/lib/fpp-monitor-agent/downloads",
+			BinaryPath:        "/opt/fpp-monitor-agent/fpp-monitor-agent",
+			RebootEnabled:     cfg.RebootEnabled,
+			RestartFPPCommand: cfg.RestartFPPCommand,
+			AllowCIDRs:        cfg.NetworkAllowlist.CIDRs,
+			AllowPorts:        cfg.NetworkAllowlist.Ports,
+			CommandTimeout:    60 * time.Second,
+		}
+
+		heartbeatSender := &heartbeat.Sender{
 			Client:       httpClient,
 			Logger:       logger,
 			APIBaseURL:   cfg.APIBaseURL,
+			DeviceID:     cfg.DeviceID,
+			DeviceToken:  cfg.DeviceToken,
 			AgentVersion: version,
-			Token:        cfg.EnrollmentToken,
-			Label:        cfg.Label,
 			FPPBaseURL:   cfg.FPPBaseURL,
+			Interval:     time.Duration(cfg.HeartbeatIntervalSec) * time.Second,
 			MaxBackoff:   60 * time.Second,
+			DebugHTTP:    debugEnabled,
+			DryRun:       dryRunEnabled,
 		}
-		resp, err := enroller.Run(ctx)
-		if err != nil {
-			logger.Error("enrollment_failed", map[string]interface{}{"error": err.Error()})
-			os.Exit(1)
+
+		commandRunner := &commands.Runner{
+			Client:       httpClient,
+			Logger:       logger,
+			APIBaseURL:   cfg.APIBaseURL,
+			DeviceID:     cfg.DeviceID,
+			DeviceToken:  cfg.DeviceToken,
+			AgentVersion: version,
+			Interval:     time.Duration(cfg.CommandPollIntervalSec) * time.Second,
+			MaxBackoff:   60 * time.Second,
+			Executor:     executor,
+			DebugHTTP:    debugEnabled,
+			DryRun:       dryRunEnabled,
 		}
-		cfg.DeviceID = resp.DeviceID
-		cfg.DeviceToken = resp.DeviceToken
-		cfg.LocationID = resp.LocationID
-		if resp.Label != "" {
-			cfg.Label = resp.Label
+
+		runCtx, cancelRun := context.WithCancel(ctx)
+		errCh := make(chan error, 2)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			errCh <- heartbeatSender.Run(runCtx)
+		}()
+		go func() {
+			defer wg.Done()
+			errCh <- commandRunner.Run(runCtx)
+		}()
+
+		var loopErr error
+		select {
+		case <-ctx.Done():
+			cancelRun()
+			wg.Wait()
+			logger.Info("shutdown", map[string]interface{}{"signal": "term"})
+			return
+		case loopErr = <-errCh:
+			cancelRun()
+			wg.Wait()
 		}
-		cfg.EnrollmentToken = ""
-		if err := config.Save(resolvedPath, cfg); err != nil {
-			logger.Error("config_write_failed", map[string]interface{}{"error": err.Error(), "path": resolvedPath})
-			os.Exit(1)
+
+		if loopErr == nil {
+			return
 		}
-		logger.Info("enrollment_success", map[string]interface{}{"device_id": cfg.DeviceID})
+		if errors.Is(loopErr, heartbeat.ErrUnauthorized) || errors.Is(loopErr, commands.ErrUnauthorized) {
+			if cfg.EnrollmentToken != "" {
+				logger.Warn("auth_unauthorized_reenroll", map[string]interface{}{"path": "/v1/agent/enroll"})
+				if err := runEnrollment(ctx, logger, httpClient, cfg, resolvedPath, version, debugEnabled, dryRunEnabled); err != nil {
+					logger.Error("enrollment_failed", map[string]interface{}{"error": err.Error()})
+					return
+				}
+				retryBackoff = 5 * time.Second
+				continue
+			}
+			sleep(ctx, retryBackoff)
+			return
+		}
+		logger.Warn("agent_loop_error", map[string]interface{}{"error": loopErr.Error()})
+		sleep(ctx, retryBackoff)
+		retryBackoff = nextBackoff(retryBackoff)
 	}
-	if cfg.DeviceToken == "" {
-		logger.Error("missing_device_token", map[string]interface{}{"path": resolvedPath})
-		os.Exit(1)
-	}
-
-	executor := &exec.Executor{
-		Logger:            logger,
-		UpdateEnabled:     cfg.Update.Enabled,
-		AllowDowngrade:    cfg.Update.AllowDowngrade,
-		UpdateChannel:     cfg.Update.Channel,
-		DownloadsDir:      "/var/lib/fpp-monitor-agent/downloads",
-		BinaryPath:        "/opt/fpp-monitor-agent/fpp-monitor-agent",
-		RebootEnabled:     cfg.RebootEnabled,
-		RestartFPPCommand: cfg.RestartFPPCommand,
-		AllowCIDRs:        cfg.NetworkAllowlist.CIDRs,
-		AllowPorts:        cfg.NetworkAllowlist.Ports,
-		CommandTimeout:    60 * time.Second,
-	}
-
-	heartbeatSender := &heartbeat.Sender{
-		Client:       httpClient,
-		Logger:       logger,
-		APIBaseURL:   cfg.APIBaseURL,
-		DeviceID:     cfg.DeviceID,
-		DeviceToken:  cfg.DeviceToken,
-		AgentVersion: version,
-		FPPBaseURL:   cfg.FPPBaseURL,
-		Interval:     time.Duration(cfg.HeartbeatIntervalSec) * time.Second,
-		MaxBackoff:   60 * time.Second,
-	}
-
-	commandRunner := &commands.Runner{
-		Client:       httpClient,
-		Logger:       logger,
-		APIBaseURL:   cfg.APIBaseURL,
-		DeviceID:     cfg.DeviceID,
-		DeviceToken:  cfg.DeviceToken,
-		AgentVersion: version,
-		Interval:     time.Duration(cfg.CommandPollIntervalSec) * time.Second,
-		MaxBackoff:   60 * time.Second,
-		Executor:     executor,
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		heartbeatSender.Run(ctx)
-	}()
-	go func() {
-		defer wg.Done()
-		commandRunner.Run(ctx)
-	}()
-
-	<-ctx.Done()
-	logger.Info("shutdown", map[string]interface{}{"signal": "term"})
-	wg.Wait()
 }
 
 func resolveConfigPath(flagValue string) (string, []string) {
@@ -180,4 +209,60 @@ func fileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+func runEnrollment(ctx context.Context, logger *log.Logger, client *httpclient.Client, cfg *config.Config, path, version string, debug, dryRun bool) error {
+	logger.Info("enrollment_start", map[string]interface{}{"api_base_url": cfg.APIBaseURL})
+	enroller := &enroll.Enroller{
+		Client:       client,
+		Logger:       logger,
+		APIBaseURL:   cfg.APIBaseURL,
+		AgentVersion: version,
+		Token:        cfg.EnrollmentToken,
+		Label:        cfg.Label,
+		FPPBaseURL:   cfg.FPPBaseURL,
+		MaxBackoff:   60 * time.Second,
+		DebugHTTP:    debug,
+		DryRun:       dryRun,
+	}
+	resp, err := enroller.Run(ctx)
+	if err != nil {
+		return err
+	}
+	cfg.DeviceID = strings.TrimSpace(resp.DeviceID)
+	cfg.DeviceToken = strings.TrimSpace(resp.DeviceToken)
+	cfg.LocationID = strings.TrimSpace(resp.LocationID)
+	if resp.Label != "" {
+		cfg.Label = strings.TrimSpace(resp.Label)
+	}
+	cfg.EnrollmentToken = ""
+	if err := config.Save(path, cfg); err != nil {
+		logger.Error("config_write_failed", map[string]interface{}{"error": err.Error(), "path": path})
+		return err
+	}
+	logger.Info("enrollment_success", map[string]interface{}{"device_id": cfg.DeviceID})
+	return nil
+}
+
+func envBool(key string) bool {
+	val := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	return val == "1" || val == "true" || val == "yes"
+}
+
+func sleep(ctx context.Context, d time.Duration) {
+	select {
+	case <-time.After(d):
+	case <-ctx.Done():
+	}
+}
+
+func nextBackoff(current time.Duration) time.Duration {
+	if current <= 0 {
+		return 5 * time.Second
+	}
+	next := current * 2
+	if next > 60*time.Second {
+		return 60 * time.Second
+	}
+	return next
 }
