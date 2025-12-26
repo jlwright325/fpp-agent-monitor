@@ -46,6 +46,10 @@ func main() {
 		logger.Error("config_load_failed", map[string]interface{}{"error": err.Error(), "path": resolvedPath})
 		os.Exit(1)
 	}
+	if cfg.DeviceToken == "" && cfg.EnrollmentToken == "" {
+		logger.Error("enrollment_missing_token", map[string]interface{}{"path": resolvedPath})
+		os.Exit(1)
+	}
 
 	httpClient := httpclient.New(10 * time.Second)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

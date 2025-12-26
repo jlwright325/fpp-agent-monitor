@@ -85,6 +85,10 @@ func Save(path string, cfg *Config) error {
 }
 
 func applyEnvOverrides(cfg *Config) {
+	if v := strings.TrimSpace(os.Getenv("SHOWOPS_API_BASE_URL")); v != "" {
+		cfg.APIBaseURL = v
+		return
+	}
 	if v := strings.TrimSpace(os.Getenv("FPP_MONITOR_API_BASE_URL")); v != "" {
 		cfg.APIBaseURL = v
 	}
@@ -117,9 +121,6 @@ func setDefaults(cfg *Config) {
 func validate(cfg *Config) error {
 	if cfg.APIBaseURL == "" {
 		return errors.New("api_base_url is required")
-	}
-	if cfg.DeviceToken == "" && cfg.EnrollmentToken == "" {
-		return errors.New("device_token or enrollment_token is required")
 	}
 	if cfg.DeviceToken != "" && cfg.DeviceID == "" {
 		return errors.New("device_id is required when device_token is set")

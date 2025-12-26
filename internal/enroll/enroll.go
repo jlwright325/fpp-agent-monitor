@@ -26,11 +26,11 @@ type Enroller struct {
 }
 
 type requestPayload struct {
-	EnrollmentToken string   `json:"enrollment_token"`
-	Hostname        string   `json:"hostname,omitempty"`
-	AgentVersion    string   `json:"agent_version,omitempty"`
-	Label           string   `json:"label,omitempty"`
-	FPPVersion      *string  `json:"fpp_version,omitempty"`
+	EnrollmentToken string  `json:"enrollment_token"`
+	Hostname        string  `json:"hostname,omitempty"`
+	AgentVersion    string  `json:"agent_version,omitempty"`
+	Label           string  `json:"label,omitempty"`
+	FPPVersion      *string `json:"fpp_version,omitempty"`
 }
 
 type responsePayload struct {
@@ -96,7 +96,7 @@ func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 	if resp.StatusCode >= 300 {
 		e.Logger.Warn("enroll_http_error", map[string]interface{}{
 			"status_code": resp.StatusCode,
-			"body":        truncateBody(body, 2048),
+			"body":        truncateBody(body, 300),
 			"path":        "/v1/agent/enroll",
 		})
 		return nil, statusError(resp.StatusCode)
