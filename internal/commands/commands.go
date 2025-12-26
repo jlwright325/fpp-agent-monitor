@@ -73,6 +73,8 @@ func (r *Runner) poll(ctx context.Context) ([]command, error) {
 	q.Set("device_id", r.DeviceID)
 	q.Set("agent_version", r.AgentVersion)
 	url := r.APIBaseURL + "/v1/agent/commands?" + q.Encode()
+	path := "/v1/agent/commands"
+	r.Logger.Info("command_poll_request", map[string]interface{}{"path": path})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -85,6 +87,11 @@ func (r *Runner) poll(ctx context.Context) ([]command, error) {
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
+		r.Logger.Warn("command_poll_http_error", map[string]interface{}{
+			"status_code": resp.StatusCode,
+			"body":        truncateBody(body, 2048),
+			"path":        path,
+		})
 		return nil, statusError(resp.StatusCode)
 	}
 	var out response
@@ -145,3 +152,10 @@ func sleep(ctx context.Context, d time.Duration) {
 type statusError int
 
 func (s statusError) Error() string { return "http_status_" + strconv.Itoa(int(s)) }
+
+func truncateBody(body []byte, max int) string {
+	if len(body) <= max {
+		return string(body)
+	}
+	return string(body[:max])
+}

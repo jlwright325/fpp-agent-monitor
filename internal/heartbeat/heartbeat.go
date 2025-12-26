@@ -79,6 +79,7 @@ func (s *Sender) sendOnce(ctx context.Context) error {
 	hostname, _ := os.Hostname()
 	fppVersion, state := fetchFPPState(ctx, s.FPPBaseURL, s.Client)
 
+	s.Logger.Info("heartbeat_request", map[string]interface{}{"path": "/v1/ingest/heartbeat"})
 	p := payload{
 		PayloadVersion: 1,
 		SentAt:         time.Now().Unix(),
@@ -103,11 +104,16 @@ func (s *Sender) sendOnce(ctx context.Context) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+s.DeviceToken)
 	req.Header.Set("Content-Type", "application/json")
-	resp, _, err := s.Client.DoWithRetry(ctx, req)
+	resp, body, err := s.Client.DoWithRetry(ctx, req)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode >= 300 {
+		s.Logger.Warn("heartbeat_http_error", map[string]interface{}{
+			"status_code": resp.StatusCode,
+			"body":        truncateBody(body, 2048),
+			"path":        "/v1/ingest/heartbeat",
+		})
 		return httpStatusError(resp.StatusCode)
 	}
 	return nil
@@ -127,3 +133,10 @@ func httpStatusError(code int) error {
 type statusError struct{ Code int }
 
 func (e *statusError) Error() string { return "http_status_" + strconv.Itoa(e.Code) }
+
+func truncateBody(body []byte, max int) string {
+	if len(body) <= max {
+		return string(body)
+	}
+	return string(body[:max])
+}
