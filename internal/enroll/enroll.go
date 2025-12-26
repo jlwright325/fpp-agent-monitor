@@ -86,6 +86,11 @@ func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
+		e.Logger.Warn("enroll_http_error", map[string]interface{}{
+			"status_code": resp.StatusCode,
+			"body":        truncateBody(body, 2048),
+			"path":        "/v1/agent/enroll",
+		})
 		return nil, statusError(resp.StatusCode)
 	}
 	var out responsePayload
@@ -137,4 +142,11 @@ func fetchFPPVersion(ctx context.Context, baseURL string, client *httpclient.Cli
 		return &v
 	}
 	return nil
+}
+
+func truncateBody(body []byte, max int) string {
+	if len(body) <= max {
+		return string(body)
+	}
+	return string(body[:max])
 }
