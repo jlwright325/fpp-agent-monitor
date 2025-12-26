@@ -75,8 +75,22 @@ func main() {
 
 		if cfg.DeviceToken == "" && cfg.EnrollmentToken != "" {
 			if err := runEnrollment(ctx, logger, httpClient, cfg, resolvedPath, version, debugEnabled, dryRunEnabled); err != nil {
-				logger.Error("enrollment_failed", map[string]interface{}{"error": err.Error()})
-				os.Exit(1)
+				var cwErr *configWriteError
+				if errors.As(err, &cwErr) {
+					logger.Error("config_write_failed", map[string]interface{}{
+						"error": cwErr.Err.Error(),
+						"path":  cwErr.Path,
+					})
+					if cwErr.Permission {
+						logger.Error("config not writable; fix permissions on /home/fpp/media/config/fpp-monitor-agent.json", map[string]interface{}{
+							"path": cwErr.Path,
+						})
+					}
+					sleep(ctx, retryBackoff)
+				} else {
+					logger.Error("enrollment_failed", map[string]interface{}{"error": err.Error()})
+					os.Exit(1)
+				}
 			}
 		}
 		if cfg.DeviceToken == "" {
@@ -238,8 +252,7 @@ func runEnrollment(ctx context.Context, logger *log.Logger, client *httpclient.C
 	}
 	cfg.EnrollmentToken = ""
 	if err := config.Save(path, cfg); err != nil {
-		logger.Error("config_write_failed", map[string]interface{}{"error": err.Error(), "path": path})
-		return err
+		return &configWriteError{Path: path, Err: err, Permission: os.IsPermission(err)}
 	}
 	logger.Info("enrollment_success", map[string]interface{}{"device_id": cfg.DeviceID})
 	return nil
@@ -266,4 +279,14 @@ func nextBackoff(current time.Duration) time.Duration {
 		return 60 * time.Second
 	}
 	return next
+}
+
+type configWriteError struct {
+	Path       string
+	Err        error
+	Permission bool
+}
+
+func (e *configWriteError) Error() string {
+	return "config_write_failed: " + e.Err.Error()
 }

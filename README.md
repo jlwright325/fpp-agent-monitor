@@ -53,6 +53,7 @@ Version:
 Config file path (plugin default): `/home/fpp/media/config/fpp-monitor-agent.json`
 Fallbacks: `/etc/fpp-monitor-agent/config.json`, `./config.json`
 Overrides: `--config <path>` or `SHOWOPS_CONFIG_PATH`
+Note: the config file must be writable by the `fpp` user so enrollment can persist `device_id` and `device_token`.
 
 ```json
 {
