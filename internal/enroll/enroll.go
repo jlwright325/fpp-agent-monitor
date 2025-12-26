@@ -168,6 +168,9 @@ func fetchFPPVersion(ctx context.Context, baseURL string, client *httpclient.Cli
 	if v, ok := out["version"].(string); ok && v != "" {
 		return &v
 	}
+	if v, ok := out["Version"].(string); ok && v != "" {
+		return &v
+	}
 	if v, ok := out["fppd"].(string); ok && v != "" {
 		return &v
 	}

@@ -83,7 +83,7 @@ func (s *Sender) Run(ctx context.Context) error {
 
 func (s *Sender) sendOnce(ctx context.Context) error {
 	hostname, _ := os.Hostname()
-	fppVersion, state := fetchFPPState(ctx, s.FPPBaseURL, s.Client)
+	fppVersion, state, resources := fetchFPPState(ctx, s.FPPBaseURL, s.Client)
 
 	s.Logger.Info("heartbeat_request", map[string]interface{}{"path": "/v1/ingest/heartbeat"})
 	p := payload{
@@ -96,7 +96,7 @@ func (s *Sender) sendOnce(ctx context.Context) error {
 			AgentVersion: s.AgentVersion,
 		},
 		State:     state,
-		Resources: resourcesPayload{},
+		Resources: resources,
 	}
 
 	b, err := json.Marshal(p)

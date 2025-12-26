@@ -17,6 +17,8 @@ type Config struct {
 	Label                  string           `json:"label"`
 	HeartbeatIntervalSec   int              `json:"heartbeat_interval_sec"`
 	CommandPollIntervalSec int              `json:"command_poll_interval_sec"`
+	FPPCollectEnabled      *bool            `json:"fpp_collect_enabled"`
+	FPPCollectIntervalSec  int              `json:"fpp_collect_interval_sec"`
 	FPPBaseURL             string           `json:"fpp_base_url"`
 	Update                 UpdateConfig     `json:"update"`
 	NetworkAllowlist       NetworkAllowlist `json:"network_allowlist"`
@@ -111,11 +113,18 @@ func setDefaults(cfg *Config) {
 	if cfg.CommandPollIntervalSec <= 0 {
 		cfg.CommandPollIntervalSec = 7
 	}
+	if cfg.FPPCollectIntervalSec <= 0 {
+		cfg.FPPCollectIntervalSec = 15
+	}
 	if cfg.FPPBaseURL == "" {
 		cfg.FPPBaseURL = "http://127.0.0.1"
 	}
 	if cfg.RestartFPPCommand == "" {
 		cfg.RestartFPPCommand = "systemctl restart fpp"
+	}
+	if cfg.FPPCollectEnabled == nil {
+		enabled := true
+		cfg.FPPCollectEnabled = &enabled
 	}
 }
 

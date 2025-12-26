@@ -15,6 +15,7 @@ import (
 	"fpp-agent-monitor/internal/config"
 	"fpp-agent-monitor/internal/enroll"
 	"fpp-agent-monitor/internal/exec"
+	"fpp-agent-monitor/internal/fppcollector"
 	"fpp-agent-monitor/internal/heartbeat"
 	"fpp-agent-monitor/internal/httpclient"
 	"fpp-agent-monitor/internal/log"
@@ -142,7 +143,7 @@ func main() {
 		}
 
 		runCtx, cancelRun := context.WithCancel(ctx)
-		errCh := make(chan error, 2)
+		errCh := make(chan error, 3)
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
@@ -153,6 +154,27 @@ func main() {
 			defer wg.Done()
 			errCh <- commandRunner.Run(runCtx)
 		}()
+
+		var collector *fppcollector.Collector
+		if cfg.FPPCollectEnabled != nil && *cfg.FPPCollectEnabled {
+			collector = &fppcollector.Collector{
+				Client:      httpClient,
+				Logger:      logger,
+				APIBaseURL:  cfg.APIBaseURL,
+				DeviceID:    cfg.DeviceID,
+				DeviceToken: cfg.DeviceToken,
+				FPPBaseURL:  cfg.FPPBaseURL,
+				Interval:    time.Duration(cfg.FPPCollectIntervalSec) * time.Second,
+				MaxBackoff:  60 * time.Second,
+				DebugHTTP:   debugEnabled,
+				DryRun:      dryRunEnabled,
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errCh <- collector.Run(runCtx)
+			}()
+		}
 
 		var loopErr error
 		select {
