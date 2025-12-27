@@ -66,6 +66,8 @@ Note: the config file must be writable by the `fpp` user so enrollment can persi
   "heartbeat_interval_sec": 15,
   "command_poll_interval_sec": 7,
   "fpp_base_url": "http://127.0.0.1",
+  "cloudflared_token": "",
+  "cloudflared_hostname": "",
   "update": {
     "enabled": true,
     "channel": "stable",
@@ -84,6 +86,8 @@ Environment overrides:
 - `FPP_MONITOR_API_BASE_URL`
 - `FPP_MONITOR_DEVICE_TOKEN`
 - `FPP_MONITOR_DEVICE_ID`
+- `FPP_MONITOR_AGENT_CLOUDFLARED_TOKEN`
+- `FPP_MONITOR_AGENT_CLOUDFLARED_HOSTNAME`
 - `SHOWOPS_API_BASE_URL` (preferred override)
 - `SHOWOPS_CONFIG_PATH`
 - `SHOWOPS_DEBUG_HTTP=1`
@@ -96,6 +100,9 @@ Token flow:
 - `enrollment_token` is used only once for `POST /v1/agent/enroll`.
 - The API returns `device_id` + `device_token`.
 - The agent persists those to config and uses `Authorization: Bearer <device_token>` for heartbeat + command polling.
+
+Remote sessions:
+- Set `cloudflared_token` + `cloudflared_hostname` to enable device-initiated tunnels.
 
 API endpoints:
 - `POST /v1/agent/enroll` with `{ enrollment_token, hostname, label?, agent_version, fpp_version }`

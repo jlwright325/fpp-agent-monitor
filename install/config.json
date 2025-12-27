@@ -8,6 +8,8 @@
   "heartbeat_interval_sec": 15,
   "command_poll_interval_sec": 7,
   "fpp_base_url": "http://127.0.0.1",
+  "cloudflared_token": "",
+  "cloudflared_hostname": "",
   "update": {
     "enabled": true,
     "channel": "stable",

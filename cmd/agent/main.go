@@ -115,6 +115,7 @@ func main() {
 			UpdateChannel:     cfg.Update.Channel,
 			DownloadsDir:      "/var/lib/fpp-monitor-agent/downloads",
 			BinaryPath:        "/opt/fpp-monitor-agent/fpp-monitor-agent",
+			ConfigPath:        resolvedPath,
 			RebootEnabled:     cfg.RebootEnabled,
 			RestartFPPCommand: cfg.RestartFPPCommand,
 			AllowCIDRs:        cfg.NetworkAllowlist.CIDRs,

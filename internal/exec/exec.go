@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"fpp-agent-monitor/internal/config"
 	"fpp-agent-monitor/internal/log"
 	"fpp-agent-monitor/internal/remote"
 	"fpp-agent-monitor/internal/update"
@@ -20,6 +21,7 @@ type Executor struct {
 	UpdateChannel     string
 	DownloadsDir      string
 	BinaryPath        string
+	ConfigPath        string
 	RebootEnabled     bool
 	RestartFPPCommand string
 	AllowCIDRs        []string
@@ -54,6 +56,8 @@ func (e *Executor) Execute(ctx context.Context, cmdType string, payload map[stri
 		return e.openSession(ctx, payload)
 	case "session_close":
 		return e.closeSession(ctx, payload)
+	case "tunnel_config":
+		return e.updateTunnelConfig(ctx, payload)
 	default:
 		return Result{Status: "error", Error: "command_not_allowed"}
 	}
@@ -162,6 +166,29 @@ func (e *Executor) closeSession(ctx context.Context, payload map[string]interfac
 		return Result{Status: "error", Error: err.Error()}
 	}
 	return Result{Status: "success", Output: "closed"}
+}
+
+func (e *Executor) updateTunnelConfig(ctx context.Context, payload map[string]interface{}) Result {
+	token, _ := payload["cloudflared_token"].(string)
+	hostname, _ := payload["cloudflared_hostname"].(string)
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(hostname) == "" {
+		return Result{Status: "error", Error: "missing_tunnel_fields"}
+	}
+
+	path := e.ConfigPath
+	if strings.TrimSpace(path) == "" {
+		path = "/home/fpp/media/config/fpp-monitor-agent.json"
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	cfg.CloudflaredToken = token
+	cfg.CloudflaredHostname = hostname
+	if err := config.Save(path, cfg); err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	return Result{Status: "success", Output: "tunnel_config_applied"}
 }
 
 func (e *Executor) pingHost(ctx context.Context, host string, timeout time.Duration) Result {
