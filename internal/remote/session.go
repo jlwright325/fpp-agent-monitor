@@ -90,11 +90,11 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	cmd := exec.CommandContext(
 		cmdCtx,
 		path,
+		"--no-autoupdate",
 		"tunnel",
 		"run",
 		"--url",
 		fmt.Sprintf("http://%s", m.proxyListener.Addr().String()),
-		"--no-autoupdate",
 		"--token",
 		m.TunnelToken,
 	)
