@@ -188,6 +188,10 @@ func (e *Executor) updateTunnelConfig(ctx context.Context, payload map[string]in
 	if err := config.Save(path, cfg); err != nil {
 		return Result{Status: "error", Error: err.Error()}
 	}
+	if e.SessionManager != nil {
+		e.SessionManager.TunnelToken = token
+		e.SessionManager.TunnelHostname = hostname
+	}
 	return Result{Status: "success", Output: "tunnel_config_applied"}
 }
 
