@@ -91,6 +91,7 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 		cmdCtx,
 		path,
 		"tunnel",
+		"run",
 		"--url",
 		fmt.Sprintf("http://%s", m.proxyListener.Addr().String()),
 		"--no-autoupdate",
@@ -99,10 +100,12 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		cancel()
 		return OpenResult{}, err
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		cancel()
 		return OpenResult{}, err
 	}
 	if err := cmd.Start(); err != nil {
