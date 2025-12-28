@@ -95,6 +95,14 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 		"--token",
 		m.TunnelToken,
 	)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return OpenResult{}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return OpenResult{}, err
+	}
 	if err := cmd.Start(); err != nil {
 		return OpenResult{}, err
 	}
@@ -108,11 +116,35 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	m.url = url
 	m.Logger.Info("session_opened", map[string]interface{}{"session_id": params.SessionID, "url": url})
 
+	readStream := func(name string, r io.Reader) {
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			m.Logger.Info("cloudflared_log", map[string]interface{}{
+				"session_id": params.SessionID,
+				"stream":     name,
+				"line":       line,
+			})
+		}
+	}
+
+	go readStream("stdout", stdout)
+	go readStream("stderr", stderr)
+
 	go func() {
-		_ = cmd.Wait()
+		err := cmd.Wait()
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if m.cmd == cmd {
+			if err != nil {
+				m.Logger.Warn("cloudflared_exit", map[string]interface{}{
+					"session_id": params.SessionID,
+					"error":      err.Error(),
+				})
+			}
 			m.Logger.Info("session_closed", map[string]interface{}{"session_id": params.SessionID})
 			m.stopLocked()
 		}

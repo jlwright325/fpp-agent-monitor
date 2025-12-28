@@ -61,11 +61,34 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X main.version=$VERSION" -o dist/fpp-monitor-agent-linux-arm64 ./cmd/agent
           chmod +x dist/fpp-monitor-agent-linux-armv7 dist/fpp-monitor-agent-linux-arm64
 
+      - name: Download cloudflared
+        run: |
+          set -eu
+          curl -fsSL -o dist/cloudflared-linux-arm https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm
+          curl -fsSL -o dist/cloudflared-linux-arm64 https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64
+          chmod +x dist/cloudflared-linux-arm dist/cloudflared-linux-arm64
+
+      - name: Package bundles
+        run: |
+          set -eu
+          mkdir -p dist/package-armv7 dist/package-arm64
+          cp dist/fpp-monitor-agent-linux-armv7 dist/package-armv7/fpp-monitor-agent
+          cp dist/cloudflared-linux-arm dist/package-armv7/cloudflared
+          tar -czf dist/fpp-monitor-agent-linux-armv7.tar.gz -C dist/package-armv7 .
+          cp dist/fpp-monitor-agent-linux-arm64 dist/package-arm64/fpp-monitor-agent
+          cp dist/cloudflared-linux-arm64 dist/package-arm64/cloudflared
+          tar -czf dist/fpp-monitor-agent-linux-arm64.tar.gz -C dist/package-arm64 .
+
       - name: Generate checksums
         run: |
           set -eu
           cd dist
-          sha256sum fpp-monitor-agent-linux-armv7 fpp-monitor-agent-linux-arm64 > checksums.txt
+          sha256sum \
+            fpp-monitor-agent-linux-armv7 \
+            fpp-monitor-agent-linux-arm64 \
+            fpp-monitor-agent-linux-armv7.tar.gz \
+            fpp-monitor-agent-linux-arm64.tar.gz \
+            > checksums.txt
 
       - name: Release
         uses: ncipollo/release-action@v1
@@ -77,4 +100,6 @@ jobs:
           artifacts: |
             dist/fpp-monitor-agent-linux-armv7
             dist/fpp-monitor-agent-linux-arm64
+            dist/fpp-monitor-agent-linux-armv7.tar.gz
+            dist/fpp-monitor-agent-linux-arm64.tar.gz
             dist/checksums.txt
