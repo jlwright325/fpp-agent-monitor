@@ -28,6 +28,7 @@ type Manager struct {
 	TunnelHostname string
 	mu       sync.Mutex
 	cmd      *exec.Cmd
+	cmdCancel context.CancelFunc
 	session  string
 	url      string
 	binPath  string
@@ -85,8 +86,9 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 		return OpenResult{}, err
 	}
 
+	cmdCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(
-		ctx,
+		cmdCtx,
 		path,
 		"tunnel",
 		"--url",
@@ -104,9 +106,11 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 		return OpenResult{}, err
 	}
 	if err := cmd.Start(); err != nil {
+		cancel()
 		return OpenResult{}, err
 	}
 	m.cmd = cmd
+	m.cmdCancel = cancel
 	m.session = params.SessionID
 
 	url := strings.TrimSpace(m.TunnelHostname)
@@ -172,6 +176,10 @@ func (m *Manager) stopLocked() {
 		_ = m.cmd.Process.Kill()
 	}
 	m.cmd = nil
+	if m.cmdCancel != nil {
+		m.cmdCancel()
+	}
+	m.cmdCancel = nil
 	m.session = ""
 	m.url = ""
 	if m.cleanBin && m.binPath != "" {
