@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,12 +32,17 @@ type Manager struct {
 	url      string
 	binPath  string
 	cleanBin bool
+	proxyToken    string
+	proxyTarget   *url.URL
+	proxyServer   *http.Server
+	proxyListener net.Listener
 }
 
 type OpenParams struct {
 	SessionID      string
 	TargetURL      string
 	IdleTimeoutSec int
+	SessionToken   string
 }
 
 type OpenResult struct {
@@ -54,10 +62,17 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	if strings.TrimSpace(m.TunnelHostname) == "" {
 		return OpenResult{}, errors.New("tunnel_hostname_missing")
 	}
+	if strings.TrimSpace(params.SessionToken) == "" {
+		return OpenResult{}, errors.New("session_token_missing")
+	}
 
 	target := strings.TrimSpace(params.TargetURL)
 	if target == "" {
 		target = "http://127.0.0.1"
+	}
+	targetURL, err := url.Parse(target)
+	if err != nil {
+		return OpenResult{}, errors.New("invalid_target_url")
 	}
 
 	path, clean, err := ensureCloudflared(ctx)
@@ -66,13 +81,16 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	}
 	m.binPath = path
 	m.cleanBin = clean
+	if err := m.startProxy(targetURL, params.SessionToken); err != nil {
+		return OpenResult{}, err
+	}
 
 	cmd := exec.CommandContext(
 		ctx,
 		path,
 		"tunnel",
 		"--url",
-		target,
+		fmt.Sprintf("http://%s", m.proxyListener.Addr().String()),
 		"--no-autoupdate",
 		"--token",
 		m.TunnelToken,
@@ -129,6 +147,51 @@ func (m *Manager) stopLocked() {
 	}
 	m.binPath = ""
 	m.cleanBin = false
+	if m.proxyServer != nil {
+		_ = m.proxyServer.Close()
+	}
+	if m.proxyListener != nil {
+		_ = m.proxyListener.Close()
+	}
+	m.proxyServer = nil
+	m.proxyListener = nil
+	m.proxyToken = ""
+	m.proxyTarget = nil
+}
+
+func (m *Manager) startProxy(targetURL *url.URL, token string) error {
+	if m.proxyListener != nil {
+		return nil
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	m.proxyListener = ln
+	m.proxyToken = token
+	m.proxyTarget = targetURL
+
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		http.Error(w, "upstream_unreachable", http.StatusBadGateway)
+	}
+	m.proxyServer = &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			prefix := "/_showops/" + m.proxyToken + "/"
+			if !strings.HasPrefix(r.URL.Path, prefix) {
+				http.NotFound(w, r)
+				return
+			}
+			r.URL.Path = "/" + strings.TrimPrefix(r.URL.Path, prefix)
+			r.Host = targetURL.Host
+			proxy.ServeHTTP(w, r)
+		}),
+	}
+
+	go func() {
+		_ = m.proxyServer.Serve(ln)
+	}()
+	return nil
 }
 
 func waitForTunnelURL(stdout io.Reader, stderr io.Reader, timeout time.Duration) (string, error) {

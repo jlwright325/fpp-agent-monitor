@@ -145,11 +145,13 @@ func (e *Executor) openSession(ctx context.Context, payload map[string]interface
 	sessionID, _ := payload["session_id"].(string)
 	targetURL, _ := payload["target_url"].(string)
 	idleFloat, _ := payload["idle_timeout_sec"].(float64)
+	sessionToken, _ := payload["session_token"].(string)
 	idleTimeout := int(idleFloat)
 	result, err := e.SessionManager.Open(ctx, remote.OpenParams{
 		SessionID:      sessionID,
 		TargetURL:      targetURL,
 		IdleTimeoutSec: idleTimeout,
+		SessionToken:   sessionToken,
 	})
 	if err != nil {
 		return Result{Status: "error", Error: err.Error()}
