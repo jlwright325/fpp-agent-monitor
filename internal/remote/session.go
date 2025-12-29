@@ -29,6 +29,7 @@ type Manager struct {
 	mu       sync.Mutex
 	cmd      *exec.Cmd
 	cmdCancel context.CancelFunc
+	closeTimer *time.Timer
 	session  string
 	url      string
 	binPath  string
@@ -38,6 +39,8 @@ type Manager struct {
 	proxyServer   *http.Server
 	proxyListener net.Listener
 }
+
+const sessionCloseGrace = 30 * time.Second
 
 type OpenParams struct {
 	SessionID      string
@@ -54,7 +57,7 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.cmd != nil {
+	if m.cmd != nil && m.session != "" {
 		return OpenResult{}, errors.New("session_active")
 	}
 	if strings.TrimSpace(m.TunnelToken) == "" {
@@ -74,6 +77,23 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	targetURL, err := url.Parse(target)
 	if err != nil {
 		return OpenResult{}, errors.New("invalid_target_url")
+	}
+
+	if m.cmd != nil && m.session == "" {
+		if m.closeTimer != nil {
+			m.closeTimer.Stop()
+			m.closeTimer = nil
+		}
+		m.session = params.SessionID
+		m.proxyToken = params.SessionToken
+		m.proxyTarget = targetURL
+		url := strings.TrimSpace(m.TunnelHostname)
+		if url != "" && !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+			url = "https://" + url
+		}
+		m.url = url
+		m.Logger.Info("session_opened", map[string]interface{}{"session_id": params.SessionID, "url": url})
+		return OpenResult{URL: url}, nil
 	}
 
 	path, clean, err := ensureCloudflared(ctx)
@@ -170,7 +190,16 @@ func (m *Manager) Close(sessionID string) error {
 	if sessionID != "" && m.session != sessionID {
 		return errors.New("session_mismatch")
 	}
-	m.stopLocked()
+	m.session = ""
+	m.url = ""
+	if m.closeTimer != nil {
+		m.closeTimer.Stop()
+	}
+	m.closeTimer = time.AfterFunc(sessionCloseGrace, func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.stopLocked()
+	})
 	return nil
 }
 
@@ -183,6 +212,10 @@ func (m *Manager) stopLocked() {
 		m.cmdCancel()
 	}
 	m.cmdCancel = nil
+	if m.closeTimer != nil {
+		m.closeTimer.Stop()
+	}
+	m.closeTimer = nil
 	m.session = ""
 	m.url = ""
 	if m.cleanBin && m.binPath != "" {
@@ -220,6 +253,13 @@ func (m *Manager) startProxy(targetURL *url.URL, token string) error {
 	}
 	m.proxyServer = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			m.mu.Lock()
+			active := m.session != ""
+			m.mu.Unlock()
+			if !active {
+				writeSessionClosed(w)
+				return
+			}
 			prefix := "/_showops/" + m.proxyToken + "/"
 			if !strings.HasPrefix(r.URL.Path, prefix) {
 				http.NotFound(w, r)
@@ -235,6 +275,31 @@ func (m *Manager) startProxy(targetURL *url.URL, token string) error {
 		_ = m.proxyServer.Serve(ln)
 	}()
 	return nil
+}
+
+func writeSessionClosed(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	_, _ = w.Write([]byte(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Session Ended</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#0b0f14; color:#e7edf5; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
+    .card { background:#121a24; border:1px solid #1d2a3a; border-radius:12px; padding:24px 28px; max-width:520px; box-shadow:0 8px 24px rgba(0,0,0,0.35); }
+    h1 { margin:0 0 8px; font-size:22px; }
+    p { margin:0; color:#9fb0c4; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Remote session ended</h1>
+    <p>This tunnel is no longer active. Return to ShowOps to open a new session.</p>
+  </div>
+</body>
+</html>`))
 }
 
 func waitForTunnelURL(stdout io.Reader, stderr io.Reader, timeout time.Duration) (string, error) {

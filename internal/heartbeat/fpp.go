@@ -16,7 +16,8 @@ func fetchFPPState(ctx context.Context, baseURL string, client *httpclient.Clien
 	resources := resourcesPayload{}
 
 	infoURL := baseURL + "/api/system/info"
-	if v := fetchStringField(ctx, client, infoURL, []string{"version", "fppd"}); v != "" {
+	infoMap := fetchJSON(ctx, client, infoURL)
+	if v := fetchStringFieldFromMap(infoMap, []string{"version", "fppd"}); v != "" {
 		version = &v
 	}
 
@@ -38,6 +39,12 @@ func fetchFPPState(ctx context.Context, baseURL string, client *httpclient.Clien
 		if s, ok := statusMap["sequence"].(string); ok && s != "" {
 			state.Sequence = &s
 		}
+		if s, ok := statusMap["current_sequence"].(string); ok && s != "" {
+			state.Sequence = &s
+		}
+		if s, ok := statusMap["current_song"].(string); ok && s != "" {
+			state.Playlist = &s
+		}
 		if cpu := findFloat(statusMap, "cpu", "CPU", "cpu_percent"); cpu != nil {
 			resources.CPUPercent = cpu
 		}
@@ -48,11 +55,32 @@ func fetchFPPState(ctx context.Context, baseURL string, client *httpclient.Clien
 			resources.DiskFreeMB = disk
 		}
 	}
+	if infoMap != nil {
+		if resources.CPUPercent == nil {
+			if cpu := findFloat(infoMap, "cpu", "CPU", "cpu_percent"); cpu != nil {
+				resources.CPUPercent = cpu
+			}
+		}
+		if resources.MemoryPercent == nil {
+			if mem := findFloat(infoMap, "memory", "Memory", "mem_percent"); mem != nil {
+				resources.MemoryPercent = mem
+			}
+		}
+		if resources.DiskFreeMB == nil {
+			if disk := findDiskFreeMB(infoMap); disk != nil {
+				resources.DiskFreeMB = disk
+			}
+		}
+	}
 	return version, state, resources
 }
 
 func fetchStringField(ctx context.Context, client *httpclient.Client, url string, keys []string) string {
 	data := fetchJSON(ctx, client, url)
+	return fetchStringFieldFromMap(data, keys)
+}
+
+func fetchStringFieldFromMap(data map[string]interface{}, keys []string) string {
 	if data == nil {
 		return ""
 	}
