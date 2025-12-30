@@ -34,6 +34,7 @@ type Manager struct {
 	url      string
 	binPath  string
 	cleanBin bool
+	tempDir string
 	proxyToken    string
 	proxyTarget   *url.URL
 	proxyServer   *http.Server
@@ -41,6 +42,7 @@ type Manager struct {
 }
 
 const sessionCloseGrace = 30 * time.Second
+const defaultFallbackTmp = "/home/fpp/media/tmp"
 
 type OpenParams struct {
 	SessionID      string
@@ -96,7 +98,13 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 		return OpenResult{URL: url}, nil
 	}
 
-	path, clean, err := ensureCloudflared(ctx)
+	tmpDir, err := createSessionTempDir()
+	if err != nil {
+		return OpenResult{}, err
+	}
+	m.tempDir = tmpDir
+
+	path, clean, err := ensureCloudflared(ctx, tmpDir)
 	if err != nil {
 		return OpenResult{}, err
 	}
@@ -118,6 +126,7 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 		"--token",
 		m.TunnelToken,
 	)
+	cmd.Env = append(os.Environ(), "TMPDIR="+tmpDir)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -143,23 +152,15 @@ func (m *Manager) Open(ctx context.Context, params OpenParams) (OpenResult, erro
 	m.url = url
 	m.Logger.Info("session_opened", map[string]interface{}{"session_id": params.SessionID, "url": url})
 
-	readStream := func(name string, r io.Reader) {
+	readStream := func(r io.Reader) {
 		scanner := bufio.NewScanner(r)
 		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
-			}
-			m.Logger.Info("cloudflared_log", map[string]interface{}{
-				"session_id": params.SessionID,
-				"stream":     name,
-				"line":       line,
-			})
+			_ = scanner.Text()
 		}
 	}
 
-	go readStream("stdout", stdout)
-	go readStream("stderr", stderr)
+	go readStream(stdout)
+	go readStream(stderr)
 
 	go func() {
 		err := cmd.Wait()
@@ -233,6 +234,10 @@ func (m *Manager) stopLocked() {
 	m.proxyListener = nil
 	m.proxyToken = ""
 	m.proxyTarget = nil
+	if m.tempDir != "" {
+		_ = os.RemoveAll(m.tempDir)
+	}
+	m.tempDir = ""
 }
 
 func (m *Manager) startProxy(targetURL *url.URL, token string) error {
@@ -337,7 +342,7 @@ func waitForTunnelURL(stdout io.Reader, stderr io.Reader, timeout time.Duration)
 	}
 }
 
-func ensureCloudflared(ctx context.Context) (string, bool, error) {
+func ensureCloudflared(ctx context.Context, tmpDir string) (string, bool, error) {
 	if path, err := exec.LookPath("cloudflared"); err == nil {
 		return path, false, nil
 	}
@@ -369,7 +374,10 @@ func ensureCloudflared(ctx context.Context) (string, bool, error) {
 		return "", false, fmt.Errorf("cloudflared_download_failed_%d", resp.StatusCode)
 	}
 
-	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("cloudflared-%d", time.Now().UnixNano()))
+	if strings.TrimSpace(tmpDir) == "" {
+		tmpDir = os.TempDir()
+	}
+	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("cloudflared-%d", time.Now().UnixNano()))
 	out, err := os.Create(tmpPath)
 	if err != nil {
 		return "", false, err
@@ -388,6 +396,27 @@ func ensureCloudflared(ctx context.Context) (string, bool, error) {
 		return "", false, err
 	}
 	return tmpPath, true, nil
+}
+
+func createSessionTempDir() (string, error) {
+	primary := os.TempDir()
+	dir, err := os.MkdirTemp(primary, "showops-remote-*")
+	if err == nil {
+		return dir, nil
+	}
+
+	fallback := strings.TrimSpace(os.Getenv("TMP_FALLBACK_DIR"))
+	if fallback == "" {
+		fallback = defaultFallbackTmp
+	}
+	if mkErr := os.MkdirAll(fallback, 0700); mkErr != nil {
+		return "", fmt.Errorf("tmp_dir_unavailable: %w", err)
+	}
+	dir, err = os.MkdirTemp(fallback, "showops-remote-*")
+	if err != nil {
+		return "", fmt.Errorf("tmp_dir_unavailable: %w", err)
+	}
+	return dir, nil
 }
 
 func EncodeResult(result OpenResult) string {

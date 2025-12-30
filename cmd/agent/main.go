@@ -118,6 +118,7 @@ func main() {
 			ConfigPath:        resolvedPath,
 			RebootEnabled:     cfg.RebootEnabled,
 			RestartFPPCommand: cfg.RestartFPPCommand,
+			FPPBaseURL:        cfg.FPPBaseURL,
 			AllowCIDRs:        cfg.NetworkAllowlist.CIDRs,
 			AllowPorts:        cfg.NetworkAllowlist.Ports,
 			CommandTimeout:    60 * time.Second,

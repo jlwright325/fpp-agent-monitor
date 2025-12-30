@@ -8,6 +8,7 @@ Type=simple
 ExecStart=/opt/fpp-monitor-agent/fpp-monitor-agent
 Restart=always
 RestartSec=2
+Environment=TMP_FALLBACK_DIR=/home/fpp/media/tmp
 StandardOutput=journal
 StandardError=journal
 

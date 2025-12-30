@@ -2,7 +2,10 @@ package exec
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -24,6 +27,7 @@ type Executor struct {
 	ConfigPath        string
 	RebootEnabled     bool
 	RestartFPPCommand string
+	FPPBaseURL        string
 	AllowCIDRs        []string
 	AllowPorts        []int
 	CommandTimeout    time.Duration
@@ -58,6 +62,8 @@ func (e *Executor) Execute(ctx context.Context, cmdType string, payload map[stri
 		return e.closeSession(ctx, payload)
 	case "tunnel_config":
 		return e.updateTunnelConfig(ctx, payload)
+	case "plugin_update":
+		return e.pluginUpdate(ctx, payload)
 	default:
 		return Result{Status: "error", Error: "command_not_allowed"}
 	}
@@ -195,6 +201,32 @@ func (e *Executor) updateTunnelConfig(ctx context.Context, payload map[string]in
 		e.SessionManager.TunnelHostname = hostname
 	}
 	return Result{Status: "success", Output: "tunnel_config_applied"}
+}
+
+func (e *Executor) pluginUpdate(ctx context.Context, payload map[string]interface{}) Result {
+	pluginID, _ := payload["plugin_id"].(string)
+	if strings.TrimSpace(pluginID) == "" {
+		pluginID = "showops-agent"
+	}
+	base := strings.TrimRight(e.FPPBaseURL, "/")
+	if base == "" {
+		base = "http://127.0.0.1"
+	}
+	updateURL := fmt.Sprintf("%s/api/plugin/%s/upgrade", base, pluginID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, updateURL, nil)
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode >= 300 {
+		return Result{Status: "error", Error: "plugin_update_failed", Output: string(body)}
+	}
+	return Result{Status: "success", Output: string(body)}
 }
 
 func (e *Executor) pingHost(ctx context.Context, host string, timeout time.Duration) Result {

@@ -67,6 +67,7 @@ var endpoints = []endpointSpec{
 	{Path: "/api/outputs", Interval: 5 * time.Minute},
 	{Path: "/api/channel/output/status", Interval: 60 * time.Second},
 	{Path: "/api/plugins", Interval: 10 * time.Minute},
+	{Path: "/api/plugin/showops-agent/updates", Interval: 5 * time.Minute},
 	{Path: "/api/logs/fppd", Interval: 10 * time.Minute, MaxBytes: 128 * 1024},
 	{Path: "/api/logs/system", Interval: 10 * time.Minute, MaxBytes: 128 * 1024},
 	{Path: "/api/settings", Interval: 30 * time.Minute},
