@@ -24,6 +24,8 @@ type Runner struct {
 	DeviceToken                  string
 	AgentVersion                 string
 	Interval                     time.Duration
+	ActiveInterval               time.Duration
+	ActiveBurst                  time.Duration
 	MaxBackoff                   time.Duration
 	Executor                     *exec.Executor
 	DebugHTTP                    bool
@@ -45,7 +47,21 @@ type response struct {
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	backoff := r.Interval
+	baseInterval := r.Interval
+	if baseInterval <= 0 {
+		baseInterval = 30 * time.Second
+	}
+	activeInterval := r.ActiveInterval
+	if activeInterval <= 0 {
+		activeInterval = 5 * time.Second
+	}
+	activeBurst := r.ActiveBurst
+	if activeBurst <= 0 {
+		activeBurst = 2 * time.Minute
+	}
+
+	backoff := baseInterval
+	var activeUntil time.Time
 	for {
 		if ctx.Err() != nil {
 			return nil
@@ -65,14 +81,21 @@ func (r *Runner) Run(ctx context.Context) error {
 			sleep(ctx, backoff)
 			continue
 		}
-		backoff = r.Interval
+		backoff = baseInterval
+		if len(cmds) > 0 {
+			activeUntil = time.Now().Add(activeBurst)
+		}
 		for _, cmd := range cmds {
 			if ctx.Err() != nil {
 				return nil
 			}
 			r.handleCommand(ctx, cmd)
 		}
-		sleep(ctx, r.Interval)
+		interval := baseInterval
+		if time.Now().Before(activeUntil) {
+			interval = activeInterval
+		}
+		sleep(ctx, interval)
 	}
 }
 

@@ -15,17 +15,22 @@ import (
 )
 
 type Sender struct {
-	Client       *httpclient.Client
-	Logger       *log.Logger
-	APIBaseURL   string
-	DeviceID     string
-	DeviceToken  string
-	AgentVersion string
-	FPPBaseURL   string
-	Interval     time.Duration
-	MaxBackoff   time.Duration
-	DebugHTTP    bool
-	DryRun       bool
+	Client          *httpclient.Client
+	Logger          *log.Logger
+	APIBaseURL      string
+	DeviceID        string
+	DeviceToken     string
+	AgentVersion    string
+	FPPBaseURL      string
+	Interval        time.Duration
+	IdleInterval    time.Duration
+	PlayingInterval time.Duration
+	ErrorInterval   time.Duration
+	ErrorBurst      time.Duration
+	CheckInterval   time.Duration
+	MaxBackoff      time.Duration
+	DebugHTTP       bool
+	DryRun          bool
 }
 
 type payload struct {
@@ -57,33 +62,105 @@ type resourcesPayload struct {
 }
 
 func (s *Sender) Run(ctx context.Context) error {
-	backoff := s.Interval
+	checkInterval := s.CheckInterval
+	if checkInterval <= 0 {
+		if s.PlayingInterval > 0 {
+			checkInterval = s.PlayingInterval
+		} else if s.Interval > 0 {
+			checkInterval = s.Interval
+		} else {
+			checkInterval = 60 * time.Second
+		}
+	}
+	idleInterval := s.IdleInterval
+	if idleInterval <= 0 {
+		idleInterval = 30 * time.Minute
+	}
+	playingInterval := s.PlayingInterval
+	if playingInterval <= 0 {
+		playingInterval = 60 * time.Second
+	}
+	errorInterval := s.ErrorInterval
+	if errorInterval <= 0 {
+		errorInterval = 15 * time.Second
+	}
+	errorBurst := s.ErrorBurst
+	if errorBurst <= 0 {
+		errorBurst = 2 * time.Minute
+	}
+
+	backoff := checkInterval
+	var lastSent time.Time
+	var lastPlaying bool
+	var lastPlayingSet bool
+	var errorBurstUntil time.Time
+
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if err := s.sendOnce(ctx); err != nil {
-			if errors.Is(err, ErrUnauthorized) {
-				return ErrUnauthorized
+		now := time.Now()
+		fppVersion, state, resources, stateOK := fetchFPPState(ctx, s.FPPBaseURL, s.Client)
+
+		playing := false
+		stateChanged := false
+		if state.Playing != nil {
+			playing = *state.Playing
+			if lastPlayingSet && playing != lastPlaying {
+				stateChanged = true
 			}
-			s.Logger.Warn("heartbeat_failed", map[string]interface{}{"error": err.Error()})
-			if backoff < s.MaxBackoff {
-				backoff *= 2
-				if backoff > s.MaxBackoff {
-					backoff = s.MaxBackoff
-				}
-			}
-			sleep(ctx, backoff)
-			continue
+			lastPlaying = playing
+			lastPlayingSet = true
 		}
-		backoff = s.Interval
-		sleep(ctx, s.Interval)
+
+		interval := idleInterval
+		if playing {
+			interval = playingInterval
+		}
+		if now.Before(errorBurstUntil) {
+			interval = errorInterval
+		}
+		if !stateOK && errorBurst > 0 {
+			errorBurstUntil = now.Add(errorBurst)
+			interval = errorInterval
+		}
+
+		shouldSend := lastSent.IsZero() || stateChanged || now.Sub(lastSent) >= interval
+		if shouldSend {
+			if err := s.sendOnce(ctx, fppVersion, state, resources); err != nil {
+				if errors.Is(err, ErrUnauthorized) {
+					return ErrUnauthorized
+				}
+				s.Logger.Warn("heartbeat_failed", map[string]interface{}{"error": err.Error()})
+				if errorBurst > 0 {
+					errorBurstUntil = now.Add(errorBurst)
+				}
+				if backoff < s.MaxBackoff {
+					backoff *= 2
+					if backoff > s.MaxBackoff {
+						backoff = s.MaxBackoff
+					}
+				}
+				sleep(ctx, backoff)
+				continue
+			}
+			lastSent = now
+			backoff = checkInterval
+		}
+
+		nextDelay := checkInterval
+		if !lastSent.IsZero() && interval > 0 {
+			remaining := time.Until(lastSent.Add(interval))
+			if remaining > 0 && remaining < nextDelay {
+				nextDelay = remaining
+			}
+		}
+		sleep(ctx, nextDelay)
 	}
 }
 
-func (s *Sender) sendOnce(ctx context.Context) error {
+func (s *Sender) sendOnce(ctx context.Context, fppVersion *string, state stateInfo, resources resourcesPayload) error {
 	hostname, _ := os.Hostname()
-	fppVersion, state, resources := fetchFPPState(ctx, s.FPPBaseURL, s.Client)
 
 	s.Logger.Info("heartbeat_request", map[string]interface{}{"path": "/v1/ingest/heartbeat"})
 	p := payload{

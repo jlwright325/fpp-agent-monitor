@@ -10,7 +10,7 @@ import (
 	"fpp-agent-monitor/internal/httpclient"
 )
 
-func fetchFPPState(ctx context.Context, baseURL string, client *httpclient.Client) (*string, stateInfo, resourcesPayload) {
+func fetchFPPState(ctx context.Context, baseURL string, client *httpclient.Client) (*string, stateInfo, resourcesPayload, bool) {
 	var version *string
 	state := stateInfo{}
 	resources := resourcesPayload{}
@@ -72,7 +72,8 @@ func fetchFPPState(ctx context.Context, baseURL string, client *httpclient.Clien
 			}
 		}
 	}
-	return version, state, resources
+	stateOK := infoMap != nil || statusMap != nil
+	return version, state, resources, stateOK
 }
 
 func fetchStringField(ctx context.Context, client *httpclient.Client, url string, keys []string) string {

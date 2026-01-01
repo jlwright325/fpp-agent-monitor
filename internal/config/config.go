@@ -9,23 +9,30 @@ import (
 )
 
 type Config struct {
-	APIBaseURL             string           `json:"api_base_url"`
-	EnrollmentToken        string           `json:"enrollment_token"`
-	DeviceToken            string           `json:"device_token"`
-	DeviceID               string           `json:"device_id"`
-	LocationID             string           `json:"location_id"`
-	Label                  string           `json:"label"`
-	HeartbeatIntervalSec   int              `json:"heartbeat_interval_sec"`
-	CommandPollIntervalSec int              `json:"command_poll_interval_sec"`
-	FPPCollectEnabled      *bool            `json:"fpp_collect_enabled"`
-	FPPCollectIntervalSec  int              `json:"fpp_collect_interval_sec"`
-	FPPBaseURL             string           `json:"fpp_base_url"`
-	CloudflaredToken       string           `json:"cloudflared_token"`
-	CloudflaredHostname    string           `json:"cloudflared_hostname"`
-	Update                 UpdateConfig     `json:"update"`
-	NetworkAllowlist       NetworkAllowlist `json:"network_allowlist"`
-	RebootEnabled          bool             `json:"reboot_enabled"`
-	RestartFPPCommand      string           `json:"restart_fpp_command"`
+	APIBaseURL                   string           `json:"api_base_url"`
+	EnrollmentToken              string           `json:"enrollment_token"`
+	DeviceToken                  string           `json:"device_token"`
+	DeviceID                     string           `json:"device_id"`
+	LocationID                   string           `json:"location_id"`
+	Label                        string           `json:"label"`
+	HeartbeatIntervalSec         int              `json:"heartbeat_interval_sec"`
+	HeartbeatCheckIntervalSec    int              `json:"heartbeat_check_interval_sec"`
+	HeartbeatPlayingIntervalSec  int              `json:"heartbeat_playing_interval_sec"`
+	HeartbeatIdleIntervalSec     int              `json:"heartbeat_idle_interval_sec"`
+	HeartbeatErrorIntervalSec    int              `json:"heartbeat_error_interval_sec"`
+	HeartbeatErrorBurstSec       int              `json:"heartbeat_error_burst_sec"`
+	CommandPollIntervalSec       int              `json:"command_poll_interval_sec"`
+	CommandPollActiveIntervalSec int              `json:"command_poll_active_interval_sec"`
+	CommandPollActiveBurstSec    int              `json:"command_poll_active_burst_sec"`
+	FPPCollectEnabled            *bool            `json:"fpp_collect_enabled"`
+	FPPCollectIntervalSec        int              `json:"fpp_collect_interval_sec"`
+	FPPBaseURL                   string           `json:"fpp_base_url"`
+	CloudflaredToken             string           `json:"cloudflared_token"`
+	CloudflaredHostname          string           `json:"cloudflared_hostname"`
+	Update                       UpdateConfig     `json:"update"`
+	NetworkAllowlist             NetworkAllowlist `json:"network_allowlist"`
+	RebootEnabled                bool             `json:"reboot_enabled"`
+	RestartFPPCommand            string           `json:"restart_fpp_command"`
 }
 
 type UpdateConfig struct {
@@ -110,13 +117,34 @@ func setDefaults(cfg *Config) {
 		cfg.APIBaseURL = "https://api.showops.io"
 	}
 	if cfg.HeartbeatIntervalSec <= 0 {
-		cfg.HeartbeatIntervalSec = 15
+		cfg.HeartbeatIntervalSec = 60
+	}
+	if cfg.HeartbeatCheckIntervalSec <= 0 {
+		cfg.HeartbeatCheckIntervalSec = cfg.HeartbeatIntervalSec
+	}
+	if cfg.HeartbeatPlayingIntervalSec <= 0 {
+		cfg.HeartbeatPlayingIntervalSec = 60
+	}
+	if cfg.HeartbeatIdleIntervalSec <= 0 {
+		cfg.HeartbeatIdleIntervalSec = 1800
+	}
+	if cfg.HeartbeatErrorIntervalSec <= 0 {
+		cfg.HeartbeatErrorIntervalSec = 15
+	}
+	if cfg.HeartbeatErrorBurstSec <= 0 {
+		cfg.HeartbeatErrorBurstSec = 120
 	}
 	if cfg.CommandPollIntervalSec <= 0 {
-		cfg.CommandPollIntervalSec = 7
+		cfg.CommandPollIntervalSec = 30
+	}
+	if cfg.CommandPollActiveIntervalSec <= 0 {
+		cfg.CommandPollActiveIntervalSec = 5
+	}
+	if cfg.CommandPollActiveBurstSec <= 0 {
+		cfg.CommandPollActiveBurstSec = 120
 	}
 	if cfg.FPPCollectIntervalSec <= 0 {
-		cfg.FPPCollectIntervalSec = 15
+		cfg.FPPCollectIntervalSec = 60
 	}
 	if cfg.FPPBaseURL == "" {
 		cfg.FPPBaseURL = "http://127.0.0.1"

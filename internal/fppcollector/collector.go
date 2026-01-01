@@ -13,16 +13,16 @@ import (
 )
 
 type Collector struct {
-	Client       *httpclient.Client
-	Logger       *log.Logger
-	APIBaseURL   string
-	DeviceID     string
-	DeviceToken  string
-	FPPBaseURL   string
-	Interval     time.Duration
-	MaxBackoff   time.Duration
-	DebugHTTP    bool
-	DryRun       bool
+	Client      *httpclient.Client
+	Logger      *log.Logger
+	APIBaseURL  string
+	DeviceID    string
+	DeviceToken string
+	FPPBaseURL  string
+	Interval    time.Duration
+	MaxBackoff  time.Duration
+	DebugHTTP   bool
+	DryRun      bool
 }
 
 type endpointSpec struct {
@@ -49,32 +49,32 @@ type batchPayload struct {
 const defaultMaxBytes = 256 * 1024
 
 var endpoints = []endpointSpec{
-	{Path: "/api/system/status", Interval: 15 * time.Second},
-	{Path: "/api/player", Interval: 15 * time.Second},
-	{Path: "/api/playlist/status", Interval: 15 * time.Second},
-	{Path: "/api/sequence/status", Interval: 15 * time.Second},
-	{Path: "/api/system/info", Interval: 5 * time.Minute},
-	{Path: "/api/system/version", Interval: 5 * time.Minute},
-	{Path: "/api/scheduler", Interval: 5 * time.Minute},
-	{Path: "/api/schedule", Interval: 5 * time.Minute},
-	{Path: "/api/playlist/schedule", Interval: 5 * time.Minute},
-	{Path: "/api/playlists/schedule", Interval: 5 * time.Minute},
-	{Path: "/api/playlists", Interval: 10 * time.Minute},
-	{Path: "/api/sequences", Interval: 10 * time.Minute},
-	{Path: "/api/media", Interval: 10 * time.Minute},
-	{Path: "/api/network", Interval: 5 * time.Minute},
-	{Path: "/api/network/wifi", Interval: 5 * time.Minute},
-	{Path: "/api/channel/output/universeOutputs", Interval: 5 * time.Minute},
-	{Path: "/api/plugin", Interval: 10 * time.Minute},
-	{Path: "/api/plugin/showops-agent/updates", Interval: 5 * time.Minute},
-	{Path: "/api/logs/fppd", Interval: 10 * time.Minute, MaxBytes: 128 * 1024},
-	{Path: "/api/logs/system", Interval: 10 * time.Minute, MaxBytes: 128 * 1024},
-	{Path: "/api/settings", Interval: 30 * time.Minute},
+	{Path: "/api/system/status", Interval: 60 * time.Second},
+	{Path: "/api/player", Interval: 60 * time.Second},
+	{Path: "/api/playlist/status", Interval: 60 * time.Second},
+	{Path: "/api/sequence/status", Interval: 60 * time.Second},
+	{Path: "/api/system/info", Interval: 30 * time.Minute},
+	{Path: "/api/system/version", Interval: 30 * time.Minute},
+	{Path: "/api/scheduler", Interval: 30 * time.Minute},
+	{Path: "/api/schedule", Interval: 30 * time.Minute},
+	{Path: "/api/playlist/schedule", Interval: 30 * time.Minute},
+	{Path: "/api/playlists/schedule", Interval: 30 * time.Minute},
+	{Path: "/api/playlists", Interval: 60 * time.Minute},
+	{Path: "/api/sequences", Interval: 60 * time.Minute},
+	{Path: "/api/media", Interval: 60 * time.Minute},
+	{Path: "/api/network", Interval: 30 * time.Minute},
+	{Path: "/api/network/wifi", Interval: 30 * time.Minute},
+	{Path: "/api/channel/output/universeOutputs", Interval: 30 * time.Minute, MaxBytes: 1024 * 1024},
+	{Path: "/api/plugin", Interval: 60 * time.Minute},
+	{Path: "/api/plugin/showops-agent/updates", Interval: 30 * time.Minute},
+	{Path: "/api/logs/fppd", Interval: 60 * time.Minute, MaxBytes: 128 * 1024},
+	{Path: "/api/logs/system", Interval: 60 * time.Minute, MaxBytes: 128 * 1024},
+	{Path: "/api/settings", Interval: 60 * time.Minute},
 }
 
 func (c *Collector) Run(ctx context.Context) error {
 	if c.Interval <= 0 {
-		c.Interval = 15 * time.Second
+		c.Interval = 60 * time.Second
 	}
 	backoff := c.Interval
 	lastFetched := map[string]time.Time{}

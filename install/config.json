@@ -5,8 +5,8 @@
   "device_id": "",
   "location_id": "",
   "label": "",
-  "heartbeat_interval_sec": 15,
-  "command_poll_interval_sec": 7,
+  "heartbeat_interval_sec": 60,
+  "command_poll_interval_sec": 30,
   "fpp_base_url": "http://127.0.0.1",
   "cloudflared_token": "",
   "cloudflared_hostname": "",
@@ -16,9 +16,23 @@
     "allow_downgrade": false
   },
   "network_allowlist": {
-    "cidrs": ["192.168.0.0/16"],
-    "ports": [80, 443, 22]
+    "cidrs": [
+      "192.168.0.0/16"
+    ],
+    "ports": [
+      80,
+      443,
+      22
+    ]
   },
   "reboot_enabled": false,
-  "restart_fpp_command": "systemctl restart fpp"
+  "restart_fpp_command": "systemctl restart fpp",
+  "heartbeat_check_interval_sec": 60,
+  "heartbeat_playing_interval_sec": 60,
+  "heartbeat_idle_interval_sec": 1800,
+  "heartbeat_error_interval_sec": 15,
+  "heartbeat_error_burst_sec": 120,
+  "command_poll_active_interval_sec": 5,
+  "command_poll_active_burst_sec": 120,
+  "fpp_collect_interval_sec": 60
 }

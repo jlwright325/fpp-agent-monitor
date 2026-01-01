@@ -103,9 +103,9 @@ func main() {
 		}
 
 		sessionManager := &remote.Manager{
-			Logger:          logger,
-			TunnelToken:     cfg.CloudflaredToken,
-			TunnelHostname:  cfg.CloudflaredHostname,
+			Logger:         logger,
+			TunnelToken:    cfg.CloudflaredToken,
+			TunnelHostname: cfg.CloudflaredHostname,
 		}
 
 		executor := &exec.Executor{
@@ -126,17 +126,22 @@ func main() {
 		}
 
 		heartbeatSender := &heartbeat.Sender{
-			Client:       httpClient,
-			Logger:       logger,
-			APIBaseURL:   cfg.APIBaseURL,
-			DeviceID:     cfg.DeviceID,
-			DeviceToken:  cfg.DeviceToken,
-			AgentVersion: version,
-			FPPBaseURL:   cfg.FPPBaseURL,
-			Interval:     time.Duration(cfg.HeartbeatIntervalSec) * time.Second,
-			MaxBackoff:   60 * time.Second,
-			DebugHTTP:    debugEnabled,
-			DryRun:       dryRunEnabled,
+			Client:          httpClient,
+			Logger:          logger,
+			APIBaseURL:      cfg.APIBaseURL,
+			DeviceID:        cfg.DeviceID,
+			DeviceToken:     cfg.DeviceToken,
+			AgentVersion:    version,
+			FPPBaseURL:      cfg.FPPBaseURL,
+			Interval:        time.Duration(cfg.HeartbeatIntervalSec) * time.Second,
+			CheckInterval:   time.Duration(cfg.HeartbeatCheckIntervalSec) * time.Second,
+			PlayingInterval: time.Duration(cfg.HeartbeatPlayingIntervalSec) * time.Second,
+			IdleInterval:    time.Duration(cfg.HeartbeatIdleIntervalSec) * time.Second,
+			ErrorInterval:   time.Duration(cfg.HeartbeatErrorIntervalSec) * time.Second,
+			ErrorBurst:      time.Duration(cfg.HeartbeatErrorBurstSec) * time.Second,
+			MaxBackoff:      60 * time.Second,
+			DebugHTTP:       debugEnabled,
+			DryRun:          dryRunEnabled,
 		}
 
 		commandRunner := &commands.Runner{
@@ -147,6 +152,8 @@ func main() {
 			DeviceToken:           cfg.DeviceToken,
 			AgentVersion:          version,
 			Interval:              time.Duration(cfg.CommandPollIntervalSec) * time.Second,
+			ActiveInterval:        time.Duration(cfg.CommandPollActiveIntervalSec) * time.Second,
+			ActiveBurst:           time.Duration(cfg.CommandPollActiveBurstSec) * time.Second,
 			MaxBackoff:            60 * time.Second,
 			Executor:              executor,
 			DebugHTTP:             debugEnabled,
