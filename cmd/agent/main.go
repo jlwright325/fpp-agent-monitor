@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,6 +21,7 @@ import (
 	"fpp-agent-monitor/internal/heartbeat"
 	"fpp-agent-monitor/internal/httpclient"
 	"fpp-agent-monitor/internal/log"
+	"fpp-agent-monitor/internal/pairing"
 	"fpp-agent-monitor/internal/remote"
 )
 
@@ -57,10 +60,6 @@ func main() {
 		logger.Error("config_load_failed", map[string]interface{}{"error": err.Error(), "path": resolvedPath})
 		os.Exit(1)
 	}
-	if cfg.DeviceToken == "" && cfg.EnrollmentToken == "" {
-		logger.Error("enrollment_missing_token", map[string]interface{}{"path": resolvedPath})
-		os.Exit(1)
-	}
 
 	httpClient := httpclient.New(10 * time.Second)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -72,9 +71,23 @@ func main() {
 			return
 		}
 
-		if cfg.DeviceToken == "" && cfg.EnrollmentToken == "" {
-			logger.Error("enrollment_missing_token", map[string]interface{}{"path": resolvedPath})
-			os.Exit(1)
+		cfg, err = config.Load(resolvedPath)
+		if err != nil {
+			logger.Error("config_load_failed", map[string]interface{}{"error": err.Error(), "path": resolvedPath})
+			sleep(ctx, retryBackoff)
+			retryBackoff = nextBackoff(retryBackoff)
+			continue
+		}
+
+		if cfg.UnpairRequested {
+			if err := runUnpair(ctx, logger, httpClient, cfg, resolvedPath, debugEnabled, dryRunEnabled); err != nil {
+				logger.Error("unpair_failed", map[string]interface{}{"error": err.Error()})
+				sleep(ctx, retryBackoff)
+				retryBackoff = nextBackoff(retryBackoff)
+				continue
+			}
+			retryBackoff = 5 * time.Second
+			continue
 		}
 
 		if cfg.DeviceToken == "" && cfg.EnrollmentToken != "" {
@@ -95,6 +108,34 @@ func main() {
 					logger.Error("enrollment_failed", map[string]interface{}{"error": err.Error()})
 					os.Exit(1)
 				}
+			}
+		}
+		if cfg.DeviceToken == "" && cfg.EnrollmentToken == "" {
+			paired, err := runPairing(ctx, logger, httpClient, cfg, resolvedPath, version, debugEnabled, dryRunEnabled)
+			if err != nil {
+				var cwErr *configWriteError
+				if errors.As(err, &cwErr) {
+					logger.Error("config_write_failed", map[string]interface{}{
+						"error": cwErr.Err.Error(),
+						"path":  cwErr.Path,
+					})
+					if cwErr.Permission {
+						logger.Error("config not writable; fix permissions on /home/fpp/media/config/fpp-monitor-agent.json", map[string]interface{}{
+							"path": cwErr.Path,
+						})
+					}
+				} else {
+					logger.Error("pairing_failed", map[string]interface{}{"error": err.Error()})
+				}
+				sleep(ctx, retryBackoff)
+				retryBackoff = nextBackoff(retryBackoff)
+				continue
+			}
+			if !paired {
+				logger.Info("pairing_waiting", map[string]interface{}{"path": resolvedPath})
+				sleep(ctx, retryBackoff)
+				retryBackoff = nextBackoff(retryBackoff)
+				continue
 			}
 		}
 		if cfg.DeviceToken == "" {
@@ -299,6 +340,154 @@ func runEnrollment(ctx context.Context, logger *log.Logger, client *httpclient.C
 	return nil
 }
 
+func runPairing(ctx context.Context, logger *log.Logger, client *httpclient.Client, cfg *config.Config, path, version string, debug, dryRun bool) (bool, error) {
+	if cfg.DeviceFingerprint == "" {
+		fingerprint, err := pairing.ComputeFingerprint()
+		if err != nil {
+			logger.Warn("pairing_fingerprint_failed", map[string]interface{}{"error": err.Error()})
+		} else {
+			cfg.DeviceFingerprint = fingerprint
+			if err := config.Save(path, cfg); err != nil {
+				return false, &configWriteError{Path: path, Err: err, Permission: os.IsPermission(err)}
+			}
+		}
+	}
+
+	requester := &pairing.Requester{
+		Client:            client,
+		Logger:            logger,
+		APIBaseURL:        cfg.APIBaseURL,
+		DeviceFingerprint: cfg.DeviceFingerprint,
+		AgentVersion:      version,
+		FPPBaseURL:        cfg.FPPBaseURL,
+		MaxBackoff:        60 * time.Second,
+		DebugHTTP:         debug,
+		DryRun:            dryRun,
+	}
+
+	if strings.TrimSpace(cfg.PairingRequestID) == "" {
+		if !cfg.PairingRequested {
+			return false, nil
+		}
+		resp, err := requester.CreateRequest(ctx)
+		if err != nil {
+			return false, err
+		}
+		cfg.PairingRequestID = strings.TrimSpace(resp.RequestID)
+		cfg.PairingCode = strings.TrimSpace(resp.PairingCode)
+		cfg.PairingExpiresAt = strings.TrimSpace(resp.ExpiresAt)
+		cfg.PairingStatus = "PENDING"
+		cfg.PairingRequested = false
+		cfg.UnpairRequested = false
+		if err := config.Save(path, cfg); err != nil {
+			return false, &configWriteError{Path: path, Err: err, Permission: os.IsPermission(err)}
+		}
+		logger.Info("pairing_request_created", map[string]interface{}{
+			"request_id": cfg.PairingRequestID,
+			"expires_at": cfg.PairingExpiresAt,
+		})
+		return false, nil
+	}
+
+	resp, err := requester.FetchStatus(ctx, cfg.PairingRequestID)
+	if err != nil {
+		return false, err
+	}
+	status := strings.ToUpper(strings.TrimSpace(resp.Status))
+	if status != "" && status != cfg.PairingStatus {
+		cfg.PairingStatus = status
+	}
+
+	switch status {
+	case "CLAIMED":
+		if resp.Claimed != nil && resp.Claimed.Credential != nil && resp.Claimed.Credential.Token != "" {
+			cfg.DeviceID = strings.TrimSpace(resp.Claimed.DeviceID)
+			cfg.DeviceToken = strings.TrimSpace(resp.Claimed.Credential.Token)
+			cfg.PairingCode = ""
+			cfg.PairingExpiresAt = ""
+			cfg.PairingRequestID = ""
+			cfg.PairingStatus = "CLAIMED"
+			cfg.PairingRequested = false
+			cfg.UnpairRequested = false
+			if err := config.Save(path, cfg); err != nil {
+				return false, &configWriteError{Path: path, Err: err, Permission: os.IsPermission(err)}
+			}
+			logger.Info("pairing_claimed", map[string]interface{}{"device_id": cfg.DeviceID})
+			return true, nil
+		}
+		if err := config.Save(path, cfg); err != nil {
+			return false, &configWriteError{Path: path, Err: err, Permission: os.IsPermission(err)}
+		}
+		return false, nil
+	case "EXPIRED", "REVOKED":
+		cfg.PairingRequestID = ""
+		cfg.PairingCode = ""
+		cfg.PairingExpiresAt = ""
+		cfg.PairingRequested = false
+		if err := config.Save(path, cfg); err != nil {
+			return false, &configWriteError{Path: path, Err: err, Permission: os.IsPermission(err)}
+		}
+		logger.Info("pairing_request_closed", map[string]interface{}{"status": status})
+		return false, nil
+	default:
+		if err := config.Save(path, cfg); err != nil {
+			return false, &configWriteError{Path: path, Err: err, Permission: os.IsPermission(err)}
+		}
+		return false, nil
+	}
+}
+
+func runUnpair(ctx context.Context, logger *log.Logger, client *httpclient.Client, cfg *config.Config, path string, debug, dryRun bool) error {
+	cfg.UnpairRequested = false
+	if cfg.DeviceID == "" || cfg.DeviceToken == "" {
+		cfg.DeviceID = ""
+		cfg.DeviceToken = ""
+		cfg.PairingStatus = "UNPAIRED"
+		return config.Save(path, cfg)
+	}
+
+	url := cfg.APIBaseURL + "/v1/devices/" + cfg.DeviceID + "/unpair"
+	if debug {
+		logger.Info("unpair_http", map[string]interface{}{
+			"method":      http.MethodPost,
+			"url":         url,
+			"path":        "/v1/devices/:id/unpair",
+			"auth_scheme": "device_token",
+		})
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return err
+	}
+	httpclient.AddDeviceAuth(req, cfg.DeviceToken)
+	if dryRun {
+		logger.Info("unpair_dry_run", map[string]interface{}{"path": "/v1/devices/:id/unpair"})
+		return nil
+	}
+	resp, body, err := client.DoWithRetry(ctx, req)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		logger.Warn("unpair_http_error", map[string]interface{}{
+			"status_code": resp.StatusCode,
+			"body":        string(body),
+			"path":        "/v1/devices/:id/unpair",
+		})
+		return statusError(resp.StatusCode)
+	}
+
+	cfg.DeviceID = ""
+	cfg.DeviceToken = ""
+	cfg.CloudflaredToken = ""
+	cfg.CloudflaredHostname = ""
+	cfg.PairingRequestID = ""
+	cfg.PairingCode = ""
+	cfg.PairingExpiresAt = ""
+	cfg.PairingStatus = "UNPAIRED"
+	return config.Save(path, cfg)
+}
+
 func envBool(key string) bool {
 	val := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
 	return val == "1" || val == "true" || val == "yes"
@@ -331,3 +520,7 @@ type configWriteError struct {
 func (e *configWriteError) Error() string {
 	return "config_write_failed: " + e.Err.Error()
 }
+
+type statusError int
+
+func (s statusError) Error() string { return "http_status_" + strconv.Itoa(int(s)) }

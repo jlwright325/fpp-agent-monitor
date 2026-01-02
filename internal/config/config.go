@@ -13,8 +13,15 @@ type Config struct {
 	EnrollmentToken              string           `json:"enrollment_token"`
 	DeviceToken                  string           `json:"device_token"`
 	DeviceID                     string           `json:"device_id"`
+	DeviceFingerprint            string           `json:"device_fingerprint"`
 	LocationID                   string           `json:"location_id"`
 	Label                        string           `json:"label"`
+	PairingRequested             bool             `json:"pairing_requested"`
+	PairingRequestID             string           `json:"pairing_request_id"`
+	PairingCode                  string           `json:"pairing_code"`
+	PairingExpiresAt             string           `json:"pairing_expires_at"`
+	PairingStatus                string           `json:"pairing_status"`
+	UnpairRequested              bool             `json:"unpair_requested"`
 	HeartbeatIntervalSec         int              `json:"heartbeat_interval_sec"`
 	HeartbeatCheckIntervalSec    int              `json:"heartbeat_check_interval_sec"`
 	HeartbeatPlayingIntervalSec  int              `json:"heartbeat_playing_interval_sec"`
@@ -173,8 +180,13 @@ func normalize(cfg *Config) {
 	cfg.EnrollmentToken = strings.TrimSpace(cfg.EnrollmentToken)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
 	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.DeviceFingerprint = strings.TrimSpace(cfg.DeviceFingerprint)
 	cfg.LocationID = strings.TrimSpace(cfg.LocationID)
 	cfg.Label = strings.TrimSpace(cfg.Label)
+	cfg.PairingRequestID = strings.TrimSpace(cfg.PairingRequestID)
+	cfg.PairingCode = strings.TrimSpace(cfg.PairingCode)
+	cfg.PairingExpiresAt = strings.TrimSpace(cfg.PairingExpiresAt)
+	cfg.PairingStatus = strings.TrimSpace(cfg.PairingStatus)
 	cfg.CloudflaredToken = strings.TrimSpace(cfg.CloudflaredToken)
 	cfg.CloudflaredHostname = strings.TrimSpace(cfg.CloudflaredHostname)
 }

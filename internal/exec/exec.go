@@ -2,10 +2,12 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -64,6 +66,10 @@ func (e *Executor) Execute(ctx context.Context, cmdType string, payload map[stri
 		return e.updateTunnelConfig(ctx, payload)
 	case "plugin_update":
 		return e.pluginUpdate(ctx, payload)
+	case "playlist_start":
+		return e.startPlaylist(ctx, payload)
+	case "playlist_stop":
+		return e.stopPlaylist(ctx, payload)
 	default:
 		return Result{Status: "error", Error: "command_not_allowed"}
 	}
@@ -174,6 +180,93 @@ func (e *Executor) closeSession(ctx context.Context, payload map[string]interfac
 		return Result{Status: "error", Error: err.Error()}
 	}
 	return Result{Status: "success", Output: "closed"}
+}
+
+func (e *Executor) startPlaylist(ctx context.Context, payload map[string]interface{}) Result {
+	if strings.TrimSpace(e.FPPBaseURL) == "" {
+		return Result{Status: "error", Error: "fpp_base_url_missing"}
+	}
+	playlist, _ := payload["playlist"].(string)
+	playlist = strings.TrimSpace(playlist)
+	if playlist == "" {
+		return Result{Status: "error", Error: "missing_playlist"}
+	}
+	attempts := []struct {
+		Method string
+		Path   string
+		Query  map[string]string
+		Body   interface{}
+	}{
+		{Method: http.MethodPost, Path: "/api/playlist/start", Body: map[string]string{"name": playlist}},
+		{Method: http.MethodGet, Path: "/api/playlist/start", Query: map[string]string{"name": playlist}},
+		{Method: http.MethodGet, Path: "/api/playlist/start", Query: map[string]string{"playlist": playlist}},
+		{Method: http.MethodPost, Path: "/api/command", Body: map[string]interface{}{"command": "Start Playlist", "args": []string{playlist}}},
+	}
+	for _, attempt := range attempts {
+		status, body, err := e.fppRequest(ctx, attempt.Method, attempt.Path, attempt.Query, attempt.Body)
+		if err == nil && status >= 200 && status < 300 {
+			return Result{Status: "success", Output: body}
+		}
+	}
+	return Result{Status: "error", Error: "playlist_start_failed"}
+}
+
+func (e *Executor) stopPlaylist(ctx context.Context, payload map[string]interface{}) Result {
+	if strings.TrimSpace(e.FPPBaseURL) == "" {
+		return Result{Status: "error", Error: "fpp_base_url_missing"}
+	}
+	attempts := []struct {
+		Method string
+		Path   string
+		Query  map[string]string
+		Body   interface{}
+	}{
+		{Method: http.MethodPost, Path: "/api/playlist/stop"},
+		{Method: http.MethodGet, Path: "/api/playlist/stop"},
+		{Method: http.MethodPost, Path: "/api/command", Body: map[string]interface{}{"command": "Stop Playlist"}},
+	}
+	for _, attempt := range attempts {
+		status, body, err := e.fppRequest(ctx, attempt.Method, attempt.Path, attempt.Query, attempt.Body)
+		if err == nil && status >= 200 && status < 300 {
+			return Result{Status: "success", Output: body}
+		}
+	}
+	return Result{Status: "error", Error: "playlist_stop_failed"}
+}
+
+func (e *Executor) fppRequest(ctx context.Context, method string, path string, query map[string]string, body interface{}) (int, string, error) {
+	base := strings.TrimRight(e.FPPBaseURL, "/")
+	fullURL := base + path
+	if len(query) > 0 {
+		values := make([]string, 0, len(query))
+		for key, value := range query {
+			values = append(values, fmt.Sprintf("%s=%s", key, neturl.QueryEscape(value)))
+		}
+		fullURL = fullURL + "?" + strings.Join(values, "&")
+	}
+	var reader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return 0, "", err
+		}
+		reader = strings.NewReader(string(b))
+	}
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, reader)
+	if err != nil {
+		return 0, "", err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(data), nil
 }
 
 func (e *Executor) updateTunnelConfig(ctx context.Context, payload map[string]interface{}) Result {
