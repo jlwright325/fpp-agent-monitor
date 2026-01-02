@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ type requestPayload struct {
 	AgentVersion    string  `json:"agent_version,omitempty"`
 	Label           string  `json:"label,omitempty"`
 	FPPVersion      *string `json:"fpp_version,omitempty"`
+	Platform        string  `json:"platform,omitempty"`
 }
 
 type responsePayload struct {
@@ -73,6 +75,7 @@ func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 		AgentVersion:    e.AgentVersion,
 		Label:           e.Label,
 		FPPVersion:      fetchFPPVersion(ctx, e.FPPBaseURL, e.Client),
+		Platform:        agentPlatform(),
 	}
 	e.Logger.Info("enroll_request", map[string]interface{}{
 		"path":          "/v1/agent/enroll",
@@ -130,6 +133,17 @@ func (e *Enroller) enrollOnce(ctx context.Context) (*responsePayload, error) {
 	out.LocationID = strings.TrimSpace(out.LocationID)
 	out.Label = strings.TrimSpace(out.Label)
 	return &out, nil
+}
+
+func agentPlatform() string {
+	switch runtime.GOARCH {
+	case "arm64":
+		return "arm64"
+	case "arm":
+		return "armv7"
+	default:
+		return runtime.GOARCH
+	}
 }
 
 func sleep(ctx context.Context, d time.Duration) {

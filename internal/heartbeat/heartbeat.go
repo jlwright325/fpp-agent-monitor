@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,7 @@ type deviceInfo struct {
 	AgentVersion string   `json:"agent_version"`
 	Latitude     *float64 `json:"latitude,omitempty"`
 	Longitude    *float64 `json:"longitude,omitempty"`
+	Platform     string   `json:"platform,omitempty"`
 }
 
 type stateInfo struct {
@@ -177,6 +179,7 @@ func (s *Sender) sendOnce(ctx context.Context, fppVersion *string, state stateIn
 			AgentVersion: s.AgentVersion,
 			Latitude:     lat,
 			Longitude:    lon,
+			Platform:     agentPlatform(),
 		},
 		State:     state,
 		Resources: resources,
@@ -299,4 +302,15 @@ func readFPPSettingsLocation() (*float64, *float64) {
 		}
 	}
 	return lat, lon
+}
+
+func agentPlatform() string {
+	switch runtime.GOARCH {
+	case "arm64":
+		return "arm64"
+	case "arm":
+		return "armv7"
+	default:
+		return runtime.GOARCH
+	}
 }
