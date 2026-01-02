@@ -65,6 +65,7 @@ var endpoints = []endpointSpec{
 	{Path: "/api/network", Interval: 30 * time.Minute},
 	{Path: "/api/network/wifi", Interval: 30 * time.Minute},
 	{Path: "/api/channel/output/universeOutputs", Interval: 30 * time.Minute, MaxBytes: 1024 * 1024},
+	{Path: "/api/outputs", Interval: 30 * time.Minute, MaxBytes: 1024 * 1024},
 	{Path: "/api/plugin", Interval: 60 * time.Minute},
 	{Path: "/api/plugin/showops-agent/updates", Interval: 30 * time.Minute},
 	{Path: "/api/logs/fppd", Interval: 60 * time.Minute, MaxBytes: 128 * 1024},
