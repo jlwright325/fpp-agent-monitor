@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,6 +71,8 @@ func (e *Executor) Execute(ctx context.Context, cmdType string, payload map[stri
 		return e.startPlaylist(ctx, payload)
 	case "playlist_stop":
 		return e.stopPlaylist(ctx, payload)
+	case "schedule_apply":
+		return e.applySchedule(ctx, payload)
 	default:
 		return Result{Status: "error", Error: "command_not_allowed"}
 	}
@@ -234,6 +237,38 @@ func (e *Executor) stopPlaylist(ctx context.Context, payload map[string]interfac
 	return Result{Status: "error", Error: "playlist_stop_failed"}
 }
 
+func (e *Executor) applySchedule(ctx context.Context, payload map[string]interface{}) Result {
+	if strings.TrimSpace(e.FPPBaseURL) == "" {
+		return Result{Status: "error", Error: "fpp_base_url_missing"}
+	}
+
+	raw, ok := payload["schedule"]
+	if !ok || raw == nil {
+		return Result{Status: "error", Error: "missing_schedule"}
+	}
+
+	var scheduleBytes []byte
+	switch v := raw.(type) {
+	case string:
+		scheduleBytes = []byte(v)
+	default:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return Result{Status: "error", Error: err.Error()}
+		}
+		scheduleBytes = encoded
+	}
+
+	status, body, err := e.fppRequestRaw(ctx, http.MethodPost, "/api/configfile/schedule.json", nil, scheduleBytes, "application/json")
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	if status < 200 || status >= 300 {
+		return Result{Status: "error", Error: "schedule_apply_failed", Output: body}
+	}
+	return Result{Status: "success", Output: body}
+}
+
 func (e *Executor) fppRequest(ctx context.Context, method string, path string, query map[string]string, body interface{}) (int, string, error) {
 	base := strings.TrimRight(e.FPPBaseURL, "/")
 	fullURL := base + path
@@ -258,6 +293,33 @@ func (e *Executor) fppRequest(ctx context.Context, method string, path string, q
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(data), nil
+}
+
+func (e *Executor) fppRequestRaw(ctx context.Context, method string, path string, query map[string]string, body []byte, contentType string) (int, string, error) {
+	base := strings.TrimRight(e.FPPBaseURL, "/")
+	fullURL := base + path
+	if len(query) > 0 {
+		values := make([]string, 0, len(query))
+		for key, value := range query {
+			values = append(values, fmt.Sprintf("%s=%s", key, neturl.QueryEscape(value)))
+		}
+		fullURL = fullURL + "?" + strings.Join(values, "&")
+	}
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, bytes.NewReader(body))
+	if err != nil {
+		return 0, "", err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
