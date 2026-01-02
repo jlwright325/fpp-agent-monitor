@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"fpp-agent-monitor/internal/httpclient"
@@ -42,10 +43,12 @@ type payload struct {
 }
 
 type deviceInfo struct {
-	DeviceID     string  `json:"device_id"`
-	Hostname     string  `json:"hostname"`
-	FPPVersion   *string `json:"fpp_version"`
-	AgentVersion string  `json:"agent_version"`
+	DeviceID     string   `json:"device_id"`
+	Hostname     string   `json:"hostname"`
+	FPPVersion   *string  `json:"fpp_version"`
+	AgentVersion string   `json:"agent_version"`
+	Latitude     *float64 `json:"latitude,omitempty"`
+	Longitude    *float64 `json:"longitude,omitempty"`
 }
 
 type stateInfo struct {
@@ -161,6 +164,7 @@ func (s *Sender) Run(ctx context.Context) error {
 
 func (s *Sender) sendOnce(ctx context.Context, fppVersion *string, state stateInfo, resources resourcesPayload) error {
 	hostname, _ := os.Hostname()
+	lat, lon := readFPPSettingsLocation()
 
 	s.Logger.Info("heartbeat_request", map[string]interface{}{"path": "/v1/ingest/heartbeat"})
 	p := payload{
@@ -171,6 +175,8 @@ func (s *Sender) sendOnce(ctx context.Context, fppVersion *string, state stateIn
 			Hostname:     hostname,
 			FPPVersion:   fppVersion,
 			AgentVersion: s.AgentVersion,
+			Latitude:     lat,
+			Longitude:    lon,
 		},
 		State:     state,
 		Resources: resources,
@@ -264,3 +270,33 @@ func authScheme(authSet bool) string {
 }
 
 var ErrUnauthorized = errors.New("unauthorized")
+
+func readFPPSettingsLocation() (*float64, *float64) {
+	data, err := os.ReadFile("/home/fpp/media/settings")
+	if err != nil {
+		return nil, nil
+	}
+	var lat *float64
+	var lon *float64
+	lines := bytes.Split(data, []byte("\n"))
+	for _, line := range lines {
+		parts := bytes.SplitN(line, []byte("="), 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(string(parts[0]))
+		val := strings.TrimSpace(string(parts[1]))
+		val = strings.Trim(val, "\"")
+		switch key {
+		case "Latitude":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				lat = &f
+			}
+		case "Longitude":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				lon = &f
+			}
+		}
+	}
+	return lat, lon
+}
