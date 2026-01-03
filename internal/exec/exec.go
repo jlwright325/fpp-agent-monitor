@@ -71,8 +71,16 @@ func (e *Executor) Execute(ctx context.Context, cmdType string, payload map[stri
 		return e.startPlaylist(ctx, payload)
 	case "playlist_stop":
 		return e.stopPlaylist(ctx, payload)
+	case "playlist_upsert":
+		return e.upsertPlaylist(ctx, payload)
+	case "playlist_delete":
+		return e.deletePlaylist(ctx, payload)
+	case "playlist_validate":
+		return e.validatePlaylists(ctx)
 	case "schedule_apply":
 		return e.applySchedule(ctx, payload)
+	case "schedule_reload":
+		return e.reloadSchedule(ctx)
 	default:
 		return Result{Status: "error", Error: "command_not_allowed"}
 	}
@@ -237,6 +245,98 @@ func (e *Executor) stopPlaylist(ctx context.Context, payload map[string]interfac
 	return Result{Status: "error", Error: "playlist_stop_failed"}
 }
 
+func (e *Executor) upsertPlaylist(ctx context.Context, payload map[string]interface{}) Result {
+	if strings.TrimSpace(e.FPPBaseURL) == "" {
+		return Result{Status: "error", Error: "fpp_base_url_missing"}
+	}
+	name, _ := payload["name"].(string)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Result{Status: "error", Error: "missing_playlist_name"}
+	}
+	raw, ok := payload["playlist"]
+	if !ok || raw == nil {
+		return Result{Status: "error", Error: "missing_playlist"}
+	}
+	var body interface{}
+	switch v := raw.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return Result{Status: "error", Error: "missing_playlist"}
+		}
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(v), &parsed); err != nil {
+			return Result{Status: "error", Error: "invalid_playlist_json"}
+		}
+		body = parsed
+	default:
+		body = raw
+	}
+	path := "/api/playlist/" + neturl.PathEscape(name)
+	status, resp, err := e.fppRequest(ctx, http.MethodPost, path, nil, body)
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	if status < 200 || status >= 300 {
+		return Result{Status: "error", Error: "playlist_upsert_failed", Output: resp}
+	}
+	return Result{Status: "success", Output: resp}
+}
+
+func (e *Executor) deletePlaylist(ctx context.Context, payload map[string]interface{}) Result {
+	if strings.TrimSpace(e.FPPBaseURL) == "" {
+		return Result{Status: "error", Error: "fpp_base_url_missing"}
+	}
+	name, _ := payload["name"].(string)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Result{Status: "error", Error: "missing_playlist_name"}
+	}
+	path := "/api/playlist/" + neturl.PathEscape(name)
+	status, resp, err := e.fppRequest(ctx, http.MethodDelete, path, nil, nil)
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	if status < 200 || status >= 300 {
+		return Result{Status: "error", Error: "playlist_delete_failed", Output: resp}
+	}
+	return Result{Status: "success", Output: resp}
+}
+
+func (e *Executor) validatePlaylists(ctx context.Context) Result {
+	if strings.TrimSpace(e.FPPBaseURL) == "" {
+		return Result{Status: "error", Error: "fpp_base_url_missing"}
+	}
+	status, resp, err := e.fppRequest(ctx, http.MethodGet, "/api/playlists/validate", nil, nil)
+	if err != nil {
+		return Result{Status: "error", Error: err.Error()}
+	}
+	if status < 200 || status >= 300 {
+		return Result{Status: "error", Error: "playlist_validate_failed", Output: resp}
+	}
+	return Result{Status: "success", Output: resp}
+}
+
+func (e *Executor) reloadSchedule(ctx context.Context) Result {
+	if strings.TrimSpace(e.FPPBaseURL) == "" {
+		return Result{Status: "error", Error: "fpp_base_url_missing"}
+	}
+	attempts := []struct {
+		Method string
+		Path   string
+	}{
+		{Method: http.MethodPost, Path: "/api/schedule/reload"},
+		{Method: http.MethodGet, Path: "/api/schedule/reload"},
+	}
+	for _, attempt := range attempts {
+		status, resp, err := e.fppRequest(ctx, attempt.Method, attempt.Path, nil, nil)
+		if err == nil && status >= 200 && status < 300 {
+			return Result{Status: "success", Output: resp}
+		}
+	}
+	return Result{Status: "error", Error: "schedule_reload_failed"}
+}
+
 func (e *Executor) applySchedule(ctx context.Context, payload map[string]interface{}) Result {
 	if strings.TrimSpace(e.FPPBaseURL) == "" {
 		return Result{Status: "error", Error: "fpp_base_url_missing"}
@@ -259,14 +359,16 @@ func (e *Executor) applySchedule(ctx context.Context, payload map[string]interfa
 		scheduleBytes = encoded
 	}
 
-	status, body, err := e.fppRequestRaw(ctx, http.MethodPost, "/api/configfile/schedule.json", nil, scheduleBytes, "application/json")
-	if err != nil {
-		return Result{Status: "error", Error: err.Error()}
+	paths := []string{"/api/schedule", "/api/configfile/schedule.json"}
+	var lastBody string
+	for _, path := range paths {
+		status, body, err := e.fppRequestRaw(ctx, http.MethodPost, path, nil, scheduleBytes, "application/json")
+		lastBody = body
+		if err == nil && status >= 200 && status < 300 {
+			return Result{Status: "success", Output: body}
+		}
 	}
-	if status < 200 || status >= 300 {
-		return Result{Status: "error", Error: "schedule_apply_failed", Output: body}
-	}
-	return Result{Status: "success", Output: body}
+	return Result{Status: "error", Error: "schedule_apply_failed", Output: lastBody}
 }
 
 func (e *Executor) fppRequest(ctx context.Context, method string, path string, query map[string]string, body interface{}) (int, string, error) {

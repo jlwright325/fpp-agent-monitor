@@ -60,7 +60,7 @@ var endpoints = []endpointSpec{
 	{Path: "/api/playlist/schedule", Interval: 30 * time.Minute},
 	{Path: "/api/playlists/schedule", Interval: 30 * time.Minute},
 	{Path: "/api/playlists", Interval: 60 * time.Minute},
-	{Path: "/api/sequences", Interval: 60 * time.Minute},
+	{Path: "/api/sequence", Interval: 60 * time.Minute},
 	{Path: "/api/media", Interval: 60 * time.Minute},
 	{Path: "/api/network", Interval: 30 * time.Minute},
 	{Path: "/api/network/wifi", Interval: 30 * time.Minute},
